@@ -1,7 +1,8 @@
 use std::{env, fs};
 use std::time::Duration;
 use log::debug;
-use crate::algorithms::{AlgorithmMetrics, CompressionLevel, Gzip};
+use crate::algorithms::{AlgorithmMetrics};
+use crate::algorithms::gzip::{Gzip, GzipCompressionLevel};
 use crate::mixing_policy::MixingPolicy;
 use crate::workload::Workload;
 
@@ -23,7 +24,7 @@ fn single_document(filename: &str) {
     debug!("Workload size: {:?}", workload.data.len());
     let mut algorithms = Vec::with_capacity(9);
     for i in 1..=9 {
-        algorithms.push(Gzip::new(CompressionLevel(i)))
+        algorithms.push(Gzip::new(GzipCompressionLevel(i)))
     }
     let algorithms: Vec<_> = algorithms
         .into_iter()

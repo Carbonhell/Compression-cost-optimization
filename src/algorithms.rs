@@ -1,13 +1,16 @@
+pub mod gzip;
+pub mod bzip2;
+pub mod xz2;
+
 use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::io::{Cursor, Write};
-use std::time::{Duration, Instant};
-use flate2::Compression;
+use std::time::Duration;
 use crate::convex_hull::Point;
 use crate::workload::Workload;
-use flate2::write::GzEncoder;
 
 pub type ByteSize = u64;
+
 /// Defines compression algorithms
 pub trait Algorithm: Debug {
     /// Estimates the compressed size obtained by running this algorithm on workload w.
@@ -21,74 +24,13 @@ pub trait Algorithm: Debug {
     fn execute_with_target(&self, w: &Workload, target: &mut Cursor<Vec<u8>>);
 }
 
-#[derive(Debug)]
-pub struct CompressionLevel(pub u32);
-#[derive(Debug)]
-pub struct Gzip {
-    compression_level: CompressionLevel,
-    compressed_size: Option<ByteSize>,
-    time_required: Option<Duration>
-}
-
-impl Gzip {
-    pub fn new(compression_level: CompressionLevel) -> Gzip {
-        Gzip {
-            compression_level,
-            compressed_size: None,
-            time_required: None
-        }
-    }
-
-    fn calculate_metrics(&mut self, workload: &Workload) {
-        log::debug!("Calculating compressed size and time required for algorithm {:?}", self);
-        let current_unix = Instant::now();
-        let compressed_data = self.execute(workload);
-        let time = current_unix.elapsed();
-        log::debug!("Compressed size and time required calculated for algorithm {:?}:\nCompressed size: {:?};\nTime required: {:?}", self, compressed_data.len() as ByteSize, time);
-        self.compressed_size = Some(compressed_data.len() as ByteSize);
-        self.time_required = Some(time);
-    }
-}
-impl Algorithm for Gzip {
-    fn compressed_size(&mut self, w: &Workload) -> ByteSize {
-        self.compressed_size.unwrap_or_else(|| {
-            self.calculate_metrics(w);
-            self.compressed_size.unwrap()
-        })
-    }
-
-    fn time_required(&mut self, w: &Workload) -> Duration {
-        self.time_required.unwrap_or_else(|| {
-            self.calculate_metrics(w);
-            self.time_required.unwrap()
-        })
-    }
-
-    fn execute(&self, w: &Workload) -> Vec<u8> {
-        let mut e = GzEncoder::new(Vec::with_capacity(w.data.len()), Compression::new(self.compression_level.0));
-        e.write_all(w.data).unwrap();
-        let res = e.finish().unwrap();
-        res
-    }
-
-    fn execute_with_target(&self, w: &Workload, target: &mut Cursor<Vec<u8>>) {
-        let instant = Instant::now();
-        log::debug!("Execute with target: init {:?}", instant.elapsed());
-        let mut e = GzEncoder::new(target, Compression::new(self.compression_level.0));
-        log::debug!("Execute with target: encoder created {:?}", instant.elapsed());
-        e.write_all(w.data).unwrap();
-        log::debug!("Execute with target: write_all done {:?}", instant.elapsed());
-        e.finish().unwrap();
-        log::debug!("Execute with target: finished {:?}", instant.elapsed());
-    }
-}
 
 // Specifies metrics related to a specific algorithm ran on a specific workload.
 #[derive(Debug)]
 pub struct AlgorithmMetrics {
     pub compressed_size: ByteSize,
     pub time_required: Duration,
-    pub algorithm: Box<dyn Algorithm>
+    pub algorithm: Box<dyn Algorithm>,
 }
 
 impl AlgorithmMetrics {
@@ -96,7 +38,7 @@ impl AlgorithmMetrics {
         AlgorithmMetrics {
             compressed_size: algorithm.compressed_size(workload),
             time_required: algorithm.time_required(workload),
-            algorithm
+            algorithm,
         }
     }
 }
@@ -138,7 +80,8 @@ impl Point for AlgorithmMetrics {
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
-    use crate::algorithms::{Algorithm, CompressionLevel, Gzip};
+    use crate::algorithms::Algorithm;
+    use crate::algorithms::gzip::{GzipCompressionLevel, Gzip};
     use crate::workload::Workload;
 
     const MOCK_WORKLOAD_DATA: &str = r#"
@@ -323,9 +266,10 @@ sì ch’io veggia la porta di san Pietro
 e color cui tu fai cotanto mesti".
 
 Allor si mosse, e io li tenni dietro."#;
+
     #[test]
     fn gzip() {
-        let mut alg = Gzip::new(CompressionLevel(9));
+        let mut alg = Gzip::new(GzipCompressionLevel(9));
         let workload = Workload::new(MOCK_WORKLOAD_DATA.as_bytes(), Duration::from_secs(1));
         alg.execute(&workload);
         println!("{:?} - {:?} - {:?}", workload.data.len(), alg.compressed_size(&workload), alg.time_required(&workload));
