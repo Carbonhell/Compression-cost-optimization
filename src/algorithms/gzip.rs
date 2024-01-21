@@ -34,6 +34,10 @@ impl Gzip {
     }
 }
 impl Algorithm for Gzip {
+    fn name(&self) -> String {
+        format!("Gzip {}", self.compression_level.0)
+    }
+
     fn compressed_size(&mut self, w: &Workload) -> ByteSize {
         self.compressed_size.unwrap_or_else(|| {
             self.calculate_metrics(w);

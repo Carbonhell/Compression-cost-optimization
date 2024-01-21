@@ -4,7 +4,7 @@ pub mod xz2;
 
 use std::cmp::Ordering;
 use std::fmt::Debug;
-use std::io::{Cursor, Write};
+use std::io::Cursor;
 use std::time::Duration;
 use crate::convex_hull::Point;
 use crate::workload::Workload;
@@ -13,6 +13,7 @@ pub type ByteSize = u64;
 
 /// Defines compression algorithms
 pub trait Algorithm: Debug {
+    fn name(&self) -> String;
     /// Estimates the compressed size obtained by running this algorithm on workload w.
     fn compressed_size(&mut self, w: &Workload) -> ByteSize;
     /// Estimates the time budget required to execute this algorithm on workload w.

@@ -34,6 +34,10 @@ impl Bzip2 {
     }
 }
 impl Algorithm for Bzip2 {
+
+    fn name(&self) -> String {
+        format!("Bzip2 {}", self.compression_level.0)
+    }
     fn compressed_size(&mut self, w: &Workload) -> ByteSize {
         self.compressed_size.unwrap_or_else(|| {
             self.calculate_metrics(w);
