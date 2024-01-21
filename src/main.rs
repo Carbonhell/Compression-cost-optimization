@@ -14,14 +14,15 @@ mod convex_hull;
 fn main() {
     env_logger::init();
     let file_name = env::args().nth(1).expect("No filename given");
+    let time_budget = env::args().nth(2).expect("No time budget (number of seconds) given").parse::<f64>().expect("Expected number of seconds");
     println!("Applying mixed compression to file '{}'", file_name);
-    single_document(file_name.as_str());
+    single_document(file_name.as_str(), time_budget);
 }
 
-fn single_document(filename: &str) {
+fn single_document(filename: &str, time_budget: f64) {
     let pagelinks = fs::read(format!("data/{}", filename)).expect("Missing data file. Ensure the file exists and that it has been correctly placed in the project data folder.");
-    let workload = Workload::new(&pagelinks, Duration::from_secs(12));
-    debug!("Workload size: {:?}", workload.data.len());
+    let workload = Workload::new(&pagelinks, Duration::from_secs_f64(time_budget));
+    debug!("Workload size: {:?}, time budget: {:?}", workload.data.len(), workload.time_budget);
     let mut algorithms = Vec::with_capacity(9);
     for i in 1..=9 {
         algorithms.push(Gzip::new(GzipCompressionLevel(i)))
@@ -43,6 +44,7 @@ fn single_document(filename: &str) {
             let minimum_time_budget = mixing_policy
                 .lower_convex_hull
                 .iter()
+                .map(|el| el.0)
                 .min();
             match minimum_time_budget {
                 Some(min) => {

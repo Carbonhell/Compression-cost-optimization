@@ -69,11 +69,11 @@ impl Eq for AlgorithmMetrics {}
 
 impl Point for AlgorithmMetrics {
     fn x(&self) -> f64 {
-        self.compressed_size as f64
+        self.time_required.as_secs_f64()
     }
 
     fn y(&self) -> f64 {
-        self.time_required.as_secs_f64()
+        self.compressed_size as f64
     }
 }
 
