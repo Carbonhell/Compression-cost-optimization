@@ -16,12 +16,13 @@ mod convex_hull;
 fn main() {
     env_logger::init();
     let mut args = env::args();
-    if args.len() < 2 {
+    if args.len() < 3 {
         println!("You must pass at least one filename + time budget (seconds, f64) pair, or a total time budget and a list of file names.");
         exit(1);
-    } else if args.len() == 2 {
-        let file_name = args.nth(1).expect("No filename given");
-        let time_budget = args.nth(2).expect("No time budget (number of seconds) given").parse::<f64>().expect("Expected number of seconds");
+    } else if args.len() == 3 {
+        let _ = args.next(); // remove the program name
+        let file_name = args.next().expect("No filename given");
+        let time_budget = args.next().expect("No time budget (number of seconds) given").parse::<f64>().expect("Expected number of seconds");
         println!("Applying mixed compression to single file '{}'", file_name);
         single_document(file_name.as_str(), time_budget);
     } else {
