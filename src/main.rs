@@ -3,7 +3,7 @@ use std::process::exit;
 use std::time::Duration;
 use log::debug;
 use plotly::{Bar, Plot, Scatter};
-use crate::algorithms::{AlgorithmMetrics};
+use crate::algorithms::{AlgorithmMetrics, ByteSize};
 use crate::algorithms::gzip::{Gzip, GzipCompressionLevel};
 use crate::mixing_policy::{MixingPolicy, MixingPolicyMultipleWorkloads};
 use crate::workload::Workload;
@@ -101,7 +101,7 @@ fn multiple_documents(workload_filenames: Vec<String>, total_time_budget: Durati
         .for_each(|workload| {
             let mut compression_configurations = Vec::with_capacity(9);
             for i in 1..=9 {
-                compression_configurations.push(Gzip::new(GzipCompressionLevel(i)))
+                compression_configurations.push(Gzip::new(GzipCompressionLevel(i))) // todo allow passing alg from cli somehow
             }
             let compression_configurations: Vec<_> = compression_configurations
                 .into_iter()
@@ -119,7 +119,7 @@ fn multiple_documents(workload_filenames: Vec<String>, total_time_budget: Durati
         .lower_convex_hull_per_workload
         .iter()
         .zip(&workload_filenames) {
-        let mut lch_info = format!("Metrics for workload '{}ì (time - compressed size)", workload_filename);
+        let mut lch_info = format!("Metrics for workload '{}' (time - compressed size)", workload_filename);
         for metric in metrics {
             lch_info.push_str(&*format!("\n{} ; {} (benefit {})", metric.0.time_required.as_secs_f32(), metric.0.compressed_size, metric.1));
         }
@@ -161,6 +161,49 @@ fn multiple_documents(workload_filenames: Vec<String>, total_time_budget: Durati
             format!("({})", setup_names.join(","))
         }).collect());
     plot.add_trace(trace);
+
+    let naive_x = algorithms
+        .iter()
+        .map(|metrics|
+            metrics
+                .iter()
+                .map(|metric| metric.time_required.as_secs_f64())
+                .collect::<Vec<_>>()
+        )
+        .fold(vec![0.; 9], |acc: Vec<f64>, times| {
+            println!("Folding {:?}, {:?}", acc, times);
+            let x = acc
+                .into_iter()
+                .zip(times)
+                .map(|(x, y)| {
+                    x + y
+                })
+                .collect();
+            println!("Result fold: {:?}", x);
+            x
+        });
+    let naive_y = algorithms
+        .iter()
+        .map(|metrics|
+            metrics
+                .iter()
+                .map(|metric| metric.compressed_size)
+                .collect::<Vec<_>>()
+        )
+        .fold(vec![0; 9], |acc: Vec<ByteSize>, times| {
+            acc
+                .into_iter()
+                .zip(times)
+                .map(|(x, y)| {
+                    x + y
+                })
+                .collect()
+        });
+
+    let trace_naive = Scatter::new(naive_x, naive_y)
+        .name("Naive mix")
+        .text_array((0..=9).map(|x| format!("Level {}", x)).collect());
+    plot.add_trace(trace_naive);
 
     plot.write_html("results/result.html");
 
