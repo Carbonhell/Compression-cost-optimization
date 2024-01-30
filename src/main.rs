@@ -1,240 +1,133 @@
-use std::{env, fs};
-use std::process::exit;
+use std::error::Error;
+use std::str::FromStr;
 use std::time::Duration;
-use log::debug;
-use plotly::{Bar, Plot, Scatter};
-use crate::algorithms::{AlgorithmMetrics, ByteSize};
-use crate::algorithms::gzip::{Gzip, GzipCompressionLevel};
-use crate::mixing_policy::{MixingPolicy, MixingPolicyMultipleWorkloads};
-use crate::workload::Workload;
+use clap::Parser;
+use mix_compression::{process_multiple_documents, process_single_document};
+use mix_compression::algorithms::Algorithm;
+use mix_compression::algorithms::bzip2::{Bzip2, Bzip2CompressionLevel};
+use mix_compression::algorithms::gzip::{Gzip, GzipCompressionLevel};
+use mix_compression::algorithms::xz2::{Xz2, Xz2CompressionLevel};
 
-mod workload;
-mod algorithms;
-mod mixing_policy;
-mod convex_hull;
+/// Parse a single key-value pair
+fn parse_key_val<T, U>(s: &str) -> Result<(T, U), Box<dyn Error + Send + Sync + 'static>>
+    where
+        T: FromStr,
+        T::Err: Error + Send + Sync + 'static,
+        U: FromStr,
+        U::Err: Error + Send + Sync + 'static,
+{
+    let pos = s
+        .find('=')
+        .ok_or_else(|| format!("invalid KEY=value: no `=` found in `{s}`"))?;
+    Ok((s[..pos].parse()?, s[pos + 1..].parse()?))
+}
+
+/// A general optimization framework to allocate computing resources to the compression of massive and heterogeneous data sets.
+///
+/// Specify which documents to compress (from the `data` folder) and the time budget to allocate for the compression.
+/// The program will output the compressed results in the `results` folder, along with useful plots showing the lower convex hulls and benefits of the mixing strategies.
+///
+/// If a single document is passed, it will be compressed by taking the optimal mix of all levels of the provided algorithm to satisfy the time budget constraint.
+/// If multiple documents are passed, the time budget constraint will be applied to the whole compression task. In this case, one document will possibly benefit of a level mixing strategy, while the others will be compressed with a specific algorithm level.
+/// The mixing strategy works by mixing compression settings (the level) for a specific algorithm.
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// List of file names from the `data` folder to process.
+    #[arg(short, long, required(true), value_delimiter = ',', value_parser = parse_key_val::< String, Alg >)]
+    documents: Vec<(String, Alg)>,
+
+    /// Time budget, represented as a f64 value describing the budget in seconds.
+    #[arg(short, long)]
+    budget: f64,
+}
+
+#[derive(Debug)]
+struct AlgParseError(String);
+
+impl std::fmt::Display for AlgParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Could not parse algorithm: {}", self.0)
+    }
+}
+
+impl Error for AlgParseError {}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum Alg {
+    Gzip,
+    Bzip2,
+    Xz2,
+}
+
+impl FromStr for Alg {
+    type Err = AlgParseError;
+
+    fn from_str(input: &str) -> Result<Alg, Self::Err> {
+        match input {
+            "gzip" => Ok(Alg::Gzip),
+            "bzip2" => Ok(Alg::Bzip2),
+            "xz2" => Ok(Alg::Xz2),
+            _ => Err(AlgParseError(String::from(input))),
+        }
+    }
+}
 
 fn main() {
     env_logger::init();
-    let mut args = env::args();
-    if args.len() < 3 {
-        println!("You must pass at least one filename + time budget (seconds, f64) pair, or a total time budget and a list of file names.");
-        exit(1);
-    } else if args.len() == 3 {
-        let _ = args.next(); // remove the program name
-        let file_name = args.next().expect("No filename given");
-        let time_budget = args.next().expect("No time budget (number of seconds) given").parse::<f64>().expect("Expected number of seconds");
-        println!("Applying mixed compression to single file '{}'", file_name);
-        single_document(file_name.as_str(), time_budget);
-    } else {
-        let _ = args.next(); // remove the program name
-        let workload_duration = args
-            .next()
-            .unwrap()
-            .parse::<f64>()
-            .expect("First argument must be a time budget in f64 seconds");
-        let mut workload_filenames = Vec::new();
-        while let Some(x) = args.next()  {
-            println!("Pushing {:?}", x);
-            workload_filenames.push(x);
-        }
-        log::info!("Applying mixed compression to multiple documents: {:?}, with duration: {}s", workload_filenames, workload_duration);
-        multiple_documents(workload_filenames, Duration::from_secs_f64(workload_duration))
-    }
-}
-
-fn single_document(filename: &str, time_budget: f64) {
-    let workload_data = fs::read(format!("data/{}", filename)).expect("Missing data file. Ensure the file exists and that it has been correctly placed in the project data folder.");
-    let workload = Workload::new(&workload_data, Duration::from_secs_f64(time_budget));
-    debug!("Workload size: {:?}, time budget: {:?}", workload.data.len(), workload.time_budget);
-    let mut algorithms = Vec::with_capacity(9);
-    for i in 1..=9 {
-        algorithms.push(Gzip::new(GzipCompressionLevel(i)))
-    }
-    let algorithms: Vec<_> = algorithms
-        .into_iter()
-        .map(|alg| {
-            AlgorithmMetrics::new(Box::new(alg), &workload)
-        })
-        .collect();
-    let mixing_policy = MixingPolicy::new(algorithms.iter().collect());
-    let optimal_mix = mixing_policy.optimal_mix(&workload);
-    match optimal_mix {
-        Some(optimal_mix) => {
-            let compressed_workload = MixingPolicy::apply_optimal_mix(&optimal_mix, &workload);
-            fs::write(format!("results/{}.zip", filename), compressed_workload).expect(format!("Couldn't write to path 'results/{}.zip'", filename).as_str());
-        },
-        None => {
-            let minimum_time_budget = mixing_policy
-                .lower_convex_hull
-                .iter()
-                .map(|el| el.0)
-                .min();
-            match minimum_time_budget {
-                Some(min) => {
-                    println!("No algorithm found that can compress data in the given time budget (Budget is {:?}, cheapest algorithm requires {:?}).", workload.time_budget, min.time_required)
-                },
-                None => {
-                    println!("The polygonal chain is empty. Is this an error?");
+    let args = Args::parse();
+    if args.documents.len() == 1 {
+        let (file_name, alg) = args.documents.first().unwrap();
+        let mut algorithms: Vec<Box<dyn Algorithm>> = Vec::with_capacity(9);
+        match alg {
+            Alg::Gzip => {
+                for i in 1..=9 {
+                    algorithms.push(Box::new(Gzip::new(GzipCompressionLevel(i))))
+                }
+            }
+            Alg::Bzip2 => {
+                for i in 1..=9 {
+                    algorithms.push(Box::new(Bzip2::new(Bzip2CompressionLevel(i))))
+                }
+            }
+            Alg::Xz2 => {
+                for i in 1..=9 {
+                    algorithms.push(Box::new(Xz2::new(Xz2CompressionLevel(i))))
                 }
             }
         }
-    }
-}
-
-fn multiple_documents(workload_filenames: Vec<String>, total_time_budget: Duration) {
-    let workload_data: Vec<_> = workload_filenames
-        .iter()
-        .map(|filename| {
-            let data: Vec<u8> = fs::read(format!("data/{}", filename)).expect("Missing data file. Ensure the file exists and that it has been correctly placed in the project data folder.");
-            data
-        })
-        .collect();
-    let workloads: Vec<_> = workload_data
-        .iter().map(|data| {
-            Workload::new(&data, Duration::from_secs_f64(0.)) // Workload duration is unused since we have a total time budget
-    })
-        .collect();
-
-    let mut algorithms = Vec::new();
-    workloads
-        .iter()
-        .for_each(|workload| {
-            let mut compression_configurations = Vec::with_capacity(9);
-            for i in 1..=9 {
-                compression_configurations.push(Gzip::new(GzipCompressionLevel(i))) // todo allow passing alg from cli somehow
+        log::info!("Applying mixed compression to single file '{}'", file_name);
+        process_single_document(file_name.as_str(), args.budget, algorithms);
+    } else {
+        let mut workload_filenames = Vec::new();
+        let mut workload_algorithms = Vec::new();
+        for (workload, alg) in args.documents {
+            let mut algorithms: Vec<Box<dyn Algorithm>> = Vec::with_capacity(9);
+            match alg {
+                Alg::Gzip => {
+                    for i in 1..=9 {
+                        algorithms.push(Box::new(Gzip::new(GzipCompressionLevel(i))))
+                    }
+                }
+                Alg::Bzip2 => {
+                    for i in 1..=9 {
+                        algorithms.push(Box::new(Bzip2::new(Bzip2CompressionLevel(i))))
+                    }
+                }
+                Alg::Xz2 => {
+                    for i in 1..=9 {
+                        algorithms.push(Box::new(Xz2::new(Xz2CompressionLevel(i))))
+                    }
+                }
             }
-            let compression_configurations: Vec<_> = compression_configurations
-                .into_iter()
-                .map(|alg| {
-                    AlgorithmMetrics::new(Box::new(alg), &workload)
-                })
-                .collect();
-            algorithms.push(compression_configurations);
-        });
-    // TODO sort out the borrow issue with &AlgorithmMetrics to remove this hack
-    let alg2 = algorithms.iter().map(|el| el.iter().collect()).collect();
-    let mixing_policy = MixingPolicyMultipleWorkloads::new(alg2);
-
-    for (metrics, workload_filename) in mixing_policy
-        .lower_convex_hull_per_workload
-        .iter()
-        .zip(&workload_filenames) {
-        let mut lch_info = format!("Metrics for workload '{}' (time - compressed size)", workload_filename);
-        for metric in metrics {
-            lch_info.push_str(&*format!("\n{} ; {} (benefit {})", metric.0.time_required.as_secs_f32(), metric.0.compressed_size, metric.1));
+            workload_filenames.push(workload);
+            workload_algorithms.push(algorithms);
         }
-        log::info!("{}", lch_info);
-        let mut plot = Plot::new();
-        let trace = Scatter::new(
-            metrics.iter().map(|el| el.0.time_required.as_secs_f32()).collect(),
-            metrics.iter().map(|el| el.0.compressed_size).collect())
-            .name(format!("Workload {}",workload_filename))
-            .text_array(metrics.iter().map(|el| el.0.algorithm.name()).collect());
-        plot.add_trace(trace);
-
-        plot.write_html(format!("results/convex-hull-{}.html",workload_filename));
-
-        let mut plot = Plot::new();
-        let trace = Bar::new(
-            metrics.iter().skip(1).enumerate().map(|(i, _)| i + 2).collect(), // +1 due to the skip and +1 since we start from 0
-            metrics.iter().skip(1).map(|el| el.1).collect())
-            .name(format!("Workload '{}'",workload_filename));
-
-        plot.add_trace(trace);
-
-        plot.write_html(format!("results/benefit-{}.html",workload_filename));
-    }
-
-    let mut plot = Plot::new();
-    let trace = Scatter::new(
-        mixing_policy.lower_convex_hull.iter().map(|metric| {
-            // we're analyzing a combination
-            metric.0.iter().fold(0., |acc, setup| acc + setup.0.time_required.as_secs_f32())
-        }).collect(),
-        mixing_policy.lower_convex_hull.iter().map(|metric| {
-            // we're analyzing a combination
-            metric.0.iter().fold(0, |acc, setup| acc + setup.0.compressed_size)
-        }).collect())
-        .name("Merged convex hull")
-        .text_array(mixing_policy.lower_convex_hull.iter().map(|el| {
-            let setup_names: Vec<_> = el.0.iter().map(|el| el.0.algorithm.name()).collect();
-            format!("({})", setup_names.join(","))
-        }).collect());
-    plot.add_trace(trace);
-
-    let naive_x = algorithms
-        .iter()
-        .map(|metrics|
-            metrics
-                .iter()
-                .map(|metric| metric.time_required.as_secs_f64())
-                .collect::<Vec<_>>()
-        )
-        .fold(vec![0.; 9], |acc: Vec<f64>, times| {
-            println!("Folding {:?}, {:?}", acc, times);
-            let x = acc
-                .into_iter()
-                .zip(times)
-                .map(|(x, y)| {
-                    x + y
-                })
-                .collect();
-            println!("Result fold: {:?}", x);
-            x
-        });
-    let naive_y = algorithms
-        .iter()
-        .map(|metrics|
-            metrics
-                .iter()
-                .map(|metric| metric.compressed_size)
-                .collect::<Vec<_>>()
-        )
-        .fold(vec![0; 9], |acc: Vec<ByteSize>, times| {
-            acc
-                .into_iter()
-                .zip(times)
-                .map(|(x, y)| {
-                    x + y
-                })
-                .collect()
-        });
-
-    let trace_naive = Scatter::new(naive_x, naive_y)
-        .name("Naive mix")
-        .text_array((0..=9).map(|x| format!("Level {}", x)).collect());
-    plot.add_trace(trace_naive);
-
-    plot.write_html("results/result.html");
-
-    let mut plot = Plot::new();
-    let trace = Bar::new(
-        mixing_policy.lower_convex_hull.iter().skip(1).map(|metric| metric.2.clone()).collect(),
-        mixing_policy.lower_convex_hull.iter().skip(1).map(|metric| metric.1.log2()).collect())
-        .name("Merged convex hull");
-    plot.add_trace(trace);
-
-    plot.write_html("results/result-benefit.html");
-    let mut result_info = "Result".to_string();
-    for metrics in &mixing_policy.lower_convex_hull {
-        let display: Vec<_> = metrics.0.iter().map(|metric| (metric.0.time_required.as_secs_f64(), metric.0.compressed_size)).collect();
-        result_info.push_str(&*format!("\n{:?}", display));
-    }
-    log::info!("{}", result_info);
-
-    let optimal_mixes = mixing_policy.mix_with_total_time_budget(total_time_budget);
-    match optimal_mixes {
-        Some(optimal_mixes) => {
-            optimal_mixes
-                .iter()
-                .enumerate()
-                .zip(workloads)
-                .zip(&workload_filenames)
-                .for_each(|(((index, mix), work), filename)| {
-                let compressed_workload = MixingPolicy::apply_optimal_mix(mix, &work);
-                fs::write(format!("results/multiple-docs-{}.zip", filename), compressed_workload).expect(format!("Couldn't write to path 'results/multiple-docs-{}.zip'", filename).as_str());
-            })
-        },
-        None => ()
+        log::info!(
+            "Applying mixed compression to multiple documents: {:?}, with duration: {}s",
+            workload_filenames,
+            args.budget);
+        process_multiple_documents(workload_filenames, workload_algorithms, Duration::from_secs_f64(args.budget))
     }
 }
+

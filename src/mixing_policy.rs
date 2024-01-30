@@ -14,7 +14,7 @@ pub struct MixingPolicy<'a> {
 
 pub struct MixingPolicyMultipleWorkloads<'a> {
     pub lower_convex_hull: Vec<CombinationWithBenefit<'a>>,
-    pub lower_convex_hull_per_workload: Vec<Vec<MetricsWithBenefit<'a>>>
+    pub lower_convex_hull_per_workload: Vec<Vec<MetricsWithBenefit<'a>>>,
 }
 
 impl MixingPolicyMultipleWorkloads<'_> {
@@ -71,12 +71,15 @@ impl MixingPolicyMultipleWorkloads<'_> {
 
         MixingPolicyMultipleWorkloads {
             lower_convex_hull: setup_combinations,
-            lower_convex_hull_per_workload: raw_workload_lchs
+            lower_convex_hull_per_workload: raw_workload_lchs,
         }
     }
 
-    /// For now, only the total time budget is taken into account: the workload time budget is ignored.
+    /// Returns the mixes to apply to each workload to respect the total time budget provided.
+    /// At all times, only at most one workload will consist of an actual mix between useful setups. All the other workloads will only use one specific setup.
+    /// For now, only the total time budget is taken into account. The workload time budget is ignored.
     pub fn mix_with_total_time_budget(&self, total_time_budget: Duration) -> Option<Vec<OptimalMix>> {
+        log::debug!("Calling mix_with_total_time_budget, {:?}", self.lower_convex_hull);
         let optimal_combination: Option<Vec<_>> = self
             .lower_convex_hull
             .windows(2)
@@ -107,6 +110,8 @@ impl MixingPolicyMultipleWorkloads<'_> {
                 let cheap_total_required_time = cheap_combination
                     .iter()
                     .fold(Duration::from_secs(0), |acc, metric| acc + metric.0.time_required);
+
+                // Merge the two combinations in a single vec of optimal mixes
                 cheap_combination
                     .iter()
                     .zip(expensive_combination)
@@ -121,8 +126,65 @@ impl MixingPolicyMultipleWorkloads<'_> {
                     })
                     .collect()
             });
-        // todo edge cases
+        let optimal_combination = if let None = optimal_combination {
+            log::debug!("Using the most expensive combination");
+            let most_expensive_combination = self
+                .lower_convex_hull
+                .last()
+                .unwrap();
+            let total_required_time = most_expensive_combination
+                .0
+                .iter()
+                .fold(Duration::from_secs(0), |acc, metric| acc + metric.0.time_required);
+
+            if total_required_time < total_time_budget {
+                Some(most_expensive_combination
+                    .0
+                    .iter()
+                    .map(|metric| OptimalMix::Single(metric.0))
+                    .collect::<Vec<_>>())
+            } else {
+                None
+            }
+        } else {
+            optimal_combination
+        };
+        log::debug!("Optimal combination: {:?}", optimal_combination);
         optimal_combination
+    }
+
+    pub fn apply_optimal_combination(optimal_mixes: &Vec<OptimalMix>, workloads: &Vec<Workload>, total_time_budget: Duration) -> Vec<Vec<u8>> {
+        log::info!("Applying optimal combination");
+        let instant = Instant::now();
+        let results = optimal_mixes
+            .iter()
+            .zip(workloads)
+            .map(|(optimal_mix, workload)| {
+                match optimal_mix {
+                    OptimalMix::Single(metrics) => {
+                        let instant = Instant::now();
+                        log::info!("Applying single algorithm for workload {}", workload.name);
+                        let data = metrics.algorithm.execute(workload);
+                        log::info!("Time passed for workload {}: {:?}", workload.name, instant.elapsed());
+                        data
+                    }
+                    OptimalMix::Normal((metric_a, metric_b), fraction) => {
+                        let workload_partition = ((workload.data.len() as f64) * fraction).round() as usize;
+                        log::info!("Applying mix of algorithms with fraction {} and partition at index {} (data len is {})", fraction, workload_partition, workload.data.len());
+                        let mut cursor = Cursor::new(Vec::with_capacity(workload.data.len()));
+                        let instant = Instant::now();
+                        log::debug!("Applying optimal mix: before algorithm A {:?}", instant.elapsed());
+                        metric_a.algorithm.execute_with_target(&Workload::new(workload.name.clone(), &workload.data[..workload_partition], workload.time_budget), &mut cursor);
+                        log::debug!("Applying optimal mix: after algorithm A, before B {:?}", instant.elapsed());
+                        metric_b.algorithm.execute_with_target(&Workload::new(workload.name.clone(), &workload.data[workload_partition..], workload.time_budget), &mut cursor);
+                        log::info!("Time passed for workload {}: {:?}", workload.name, instant.elapsed());
+                        cursor.into_inner()
+                    }
+                }
+            })
+            .collect::<Vec<_>>();
+        log::info!("Time passed for the application of all mixes: {:?} (should be near the time budget which is {:?})", instant.elapsed(), total_time_budget);
+        results
     }
 }
 
@@ -247,17 +309,21 @@ impl MixingPolicy<'_> {
                 OptimalMix::Normal((expensive_alg, cheap_alg), fraction / 100.)
             });
         // Special case: time budget allows for the most expensive algorithm to be used
-        if let None = optimal_mix {
+        let optimal_mix = if let None = optimal_mix {
+            log::debug!("Using the most expensive mix");
             let most_expensive_algorithm = self
                 .lower_convex_hull
                 .last()
                 .unwrap()
                 .0;
             if most_expensive_algorithm.time_required < workload.time_budget {
-                return Some(OptimalMix::Single(most_expensive_algorithm));
+                Some(OptimalMix::Single(most_expensive_algorithm))
+            } else {
+                None
             }
-            return None;
-        }
+        } else {
+            optimal_mix
+        };
         log::debug!("Optimal mix: {:?}", optimal_mix);
         optimal_mix
     }
@@ -274,25 +340,15 @@ impl MixingPolicy<'_> {
                 let mut cursor = Cursor::new(Vec::with_capacity(workload.data.len()));
                 let instant = Instant::now();
                 log::debug!("Applying optimal mix: before algorithm A {:?}", instant.elapsed());
-                metric_a.algorithm.execute_with_target(&Workload::new(&workload.data[..workload_partition], workload.time_budget), &mut cursor);
+                metric_a.algorithm.execute_with_target(&Workload::new(workload.name.clone(), &workload.data[..workload_partition], workload.time_budget), &mut cursor);
                 log::debug!("Applying optimal mix: after algorithm A, before B {:?}", instant.elapsed());
-                metric_b.algorithm.execute_with_target(&Workload::new(&workload.data[workload_partition..], workload.time_budget), &mut cursor);
+                metric_b.algorithm.execute_with_target(&Workload::new(workload.name.clone(), &workload.data[workload_partition..], workload.time_budget), &mut cursor);
                 log::info!("Time passed: {:?} (should be near the time budget which is {:?})", instant.elapsed(), workload.time_budget);
                 cursor.into_inner()
             }
         }
     }
 }
-
-// TODO merge the two enums
-#[derive(Debug)]
-pub enum OptimalCombinationMix<'a> {
-    /// The workload allows using only an extreme algorithm (the worst or the best), the fraction is obviously 1.
-    Single(&'a CombinationWithBenefit<'a>),
-    /// We got a proper mix, with each algorithm handling a fraction of the workload
-    Normal((&'a CombinationWithBenefit<'a>, &'a CombinationWithBenefit<'a>), f64),
-}
-
 
 #[derive(Debug)]
 pub enum OptimalMix<'a> {
@@ -337,7 +393,7 @@ mod tests {
     #[test]
     fn paper_polygonal_chain() {
         let _ = env_logger::try_init();
-        let workload = Workload::new("test".as_bytes(), Duration::from_secs(5));
+        let workload = Workload::new(String::from("test"), "test".as_bytes(), Duration::from_secs(5));
         let algorithm_metrics = vec![
             AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 1_000_000, time_required: Duration::from_secs(2) }), &workload),
             AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 800_000 as ByteSize, time_required: Duration::from_secs(4) }), &workload),
@@ -365,7 +421,7 @@ mod tests {
     #[test]
     fn optimal_mix() {
         let _ = env_logger::try_init();
-        let workload = Workload::new("test".as_bytes(), Duration::from_secs(7));
+        let workload = Workload::new(String::from("test"), "test".as_bytes(), Duration::from_secs(7));
         let algorithm_metrics = vec![
             AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 1_000_000, time_required: Duration::from_secs(2) }), &workload),
             AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 800_000 as ByteSize, time_required: Duration::from_secs(4) }), &workload),
