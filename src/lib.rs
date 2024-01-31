@@ -1,8 +1,10 @@
 use std::fs;
 use std::time::Duration;
-use plotly::{Bar, Plot, Scatter};
+use plotly::{Bar, Layout, Plot, Scatter};
+use plotly::common::Title;
+use plotly::layout::{Axis, Legend};
 use crate::algorithms::{Algorithm, AlgorithmMetrics, ByteSize};
-use crate::mixing_policy::{MixingPolicy, MixingPolicyMultipleWorkloads};
+use crate::mixing_policy::{MetricsWithBenefit, MixingPolicy, MixingPolicyMultipleWorkloads};
 use crate::workload::Workload;
 
 pub mod workload;
@@ -23,6 +25,8 @@ pub fn process_single_document(filename: &str, time_budget: f64, algorithms: Vec
         })
         .collect();
     let mixing_policy = MixingPolicy::new(algorithms.iter().collect());
+    draw_workload_plots(&mixing_policy.lower_convex_hull, filename);
+
     let optimal_mix = mixing_policy.optimal_mix(&workload);
     match optimal_mix {
         Some(optimal_mix) => {
@@ -40,7 +44,7 @@ pub fn process_single_document(filename: &str, time_budget: f64, algorithms: Vec
                     log::info!("No algorithm found that can compress data in the given time budget (Budget is {:?}, cheapest algorithm requires {:?}).", workload.time_budget, min.time_required)
                 }
                 None => {
-                    log::info!("The polygonal chain is empty. Is this an error?");
+                    log::info!("The lower convex hull is empty. Is this an error?");
                 }
             }
         }
@@ -93,31 +97,61 @@ pub fn process_multiple_documents(workload_filenames: Vec<String>, workload_algo
         }
         log::info!("{}", lch_info);
 
-        // Convex hull plot for a specific workload
-        let mut plot = Plot::new();
-        let trace = Scatter::new(
-            metrics.iter().map(|el| el.0.time_required.as_secs_f32()).collect(),
-            metrics.iter().map(|el| el.0.compressed_size).collect())
-            .name(format!("Workload {}", workload_filename))
-            .text_array(metrics.iter().map(|el| el.0.algorithm.name()).collect());
-        plot.add_trace(trace);
-
-        plot.write_html(format!("results/convex-hull-{}.html", workload_filename));
-
-        // Benefit plot for a specific workload
-        let mut plot = Plot::new();
-        let trace = Bar::new(
-            metrics.iter().skip(1).enumerate().map(|(i, _)| i + 2).collect(), // +1 due to the skip and +1 since we start from 0
-            metrics.iter().skip(1).map(|el| el.1).collect())
-            .name(format!("Workload '{}'", workload_filename));
-
-        plot.add_trace(trace);
-
-        plot.write_html(format!("results/benefit-{}.html", workload_filename));
+        draw_workload_plots(metrics, workload_filename);
     }
 
+
+    draw_multiple_workloads_plots(&algorithms, &mixing_policy, &workload_filenames);
+    let mut result_info = "Resulting lower convex hull for the multiple document mix:".to_string();
+    for metrics in &mixing_policy.lower_convex_hull {
+        let display: Vec<_> = metrics.0.iter().map(|metric| (metric.0.time_required.as_secs_f64(), metric.0.compressed_size)).collect();
+        result_info.push_str(&*format!("\n{:?} (benefit: {})", display, metrics.1));
+    }
+    log::info!("{}", result_info);
+
+    // Apply the actual mix and write the resulting compressed data in the results folder
+    let optimal_mixes = mixing_policy.mix_with_total_time_budget(total_time_budget);
+    match optimal_mixes {
+        Some(optimal_mixes) => {
+            let results = MixingPolicyMultipleWorkloads::apply_optimal_combination(&optimal_mixes, &workloads, total_time_budget);
+            results
+                .iter()
+                .zip(&workload_filenames)
+                .for_each(|(data, filename)| {
+                    fs::write(format!("results/multiple-docs-{}.zip", filename), data).expect(format!("Couldn't write to path 'results/multiple-docs-{}.zip'", filename).as_str());
+                });
+        }
+        None => {
+            let minimum_time_budget = mixing_policy
+                .lower_convex_hull
+                .iter()
+                .map(|metric| {
+                    // we're analyzing a combination
+                    metric.0.iter().fold(0., |acc, setup| acc + setup.0.time_required.as_secs_f32())
+                })
+                .min_by(|a, b| a.total_cmp(b));
+            match minimum_time_budget {
+                Some(min) => {
+                    log::info!("No algorithm found that can compress data in the given time budget (Budget is {:?}, cheapest algorithm requires {:?}).", total_time_budget, Duration::from_secs_f32(min))
+                }
+                None => {
+                    log::warn!("The lower convex hull is empty. Is this an error?");
+                }
+            }
+        }
+    }
+}
+
+/// Draws convex hull and benefit plots for a MixingPolicyMultipleWorkloads struct,
+/// with a comparison with a naive approach using the same compression level for each algorithm in each combination.
+fn draw_multiple_workloads_plots(algorithms: &Vec<Vec<AlgorithmMetrics>>, mixing_policy: &MixingPolicyMultipleWorkloads, workload_filenames: &Vec<String>) {
     // Convex hull plot for the whole multiple document mixing process
     let mut plot = Plot::new();
+    plot.set_layout(Layout::new()
+        .title(Title::new(&*format!("Convex hull of workloads \"{}\"", workload_filenames.join(","))))
+        .x_axis(Axis::new().title(Title::new("Time (sec)")))
+        .y_axis(Axis::new().title(Title::new("Size (bytes)")))
+        .legend(Legend::new()));
     let trace = Scatter::new(
         mixing_policy.lower_convex_hull.iter().map(|metric| {
             // we're analyzing a combination
@@ -126,6 +160,7 @@ pub fn process_multiple_documents(workload_filenames: Vec<String>, workload_algo
         mixing_policy.lower_convex_hull.iter().map(|metric| {
             metric.0.iter().fold(0, |acc, setup| acc + setup.0.compressed_size)
         }).collect())
+        .text_template(".3s")
         .name("Merged convex hull")
         .text_array(mixing_policy.lower_convex_hull.iter().map(|el| {
             let setup_names: Vec<_> = el.0.iter().map(|el| el.0.algorithm.name()).collect();
@@ -193,40 +228,62 @@ pub fn process_multiple_documents(workload_filenames: Vec<String>, workload_algo
 
     log::debug!("Plotting naive mixes data:\n{:?}\n{:?}", naive_x, naive_y);
     let trace_naive = Scatter::new(naive_x, naive_y)
+        .text_template(".3s")
         .name("Naive mix")
         .text_array((0..=max_alg_levels).map(|x| format!("Level {}", x)).collect());
     plot.add_trace(trace_naive);
 
     plot.write_html("results/result.html");
 
-
     // Benefit plot for the whole multiple document mixing process
     let mut plot = Plot::new();
+    plot.set_layout(Layout::new()
+        .title(Title::new(&*format!("Benefits for workloads \"{}\"", workload_filenames.join(","))))
+        .x_axis(Axis::new().title(Title::new("Useful setup")).dtick(1.))
+        .y_axis(Axis::new().title(Title::new("Benefit (bytes/sec)")).tick_format(".3s"))
+        .legend(Legend::new()));
     let trace = Bar::new(
         mixing_policy.lower_convex_hull.iter().skip(1).map(|metric| metric.2.clone()).collect(),
         mixing_policy.lower_convex_hull.iter().skip(1).map(|metric| metric.1.log2()).collect());
     plot.add_trace(trace);
 
     plot.write_html("results/result-benefit.html");
-    let mut result_info = "Resulting lower convex hull for the multiple document mix:".to_string();
-    for metrics in &mixing_policy.lower_convex_hull {
-        let display: Vec<_> = metrics.0.iter().map(|metric| (metric.0.time_required.as_secs_f64(), metric.0.compressed_size)).collect();
-        result_info.push_str(&*format!("\n{:?} (benefit: {})", display, metrics.1));
-    }
-    log::info!("{}", result_info);
-
-    // Apply the actual mix and write the resulting compressed data in the results folder
-    let optimal_mixes = mixing_policy.mix_with_total_time_budget(total_time_budget);
-    match optimal_mixes {
-        Some(optimal_mixes) => {
-            let results = MixingPolicyMultipleWorkloads::apply_optimal_combination(&optimal_mixes, &workloads, total_time_budget);
-            results
-                .iter()
-                .zip(&workload_filenames)
-                .for_each(|(data, filename)| {
-                    fs::write(format!("results/multiple-docs-{}.zip", filename), data).expect(format!("Couldn't write to path 'results/multiple-docs-{}.zip'", filename).as_str());
-                });
-        }
-        None => ()
-    }
 }
+
+/// Draws two plots, one showing the convex hull associated to the provided metrics and one showing the benefits.
+fn draw_workload_plots(metrics: &Vec<MetricsWithBenefit>, workload_filename: &str) {
+    // Convex hull plot for a specific workload
+    let mut plot = Plot::new();
+    plot.set_layout(Layout::new()
+        .title(Title::new(&*format!("Convex hull of workload \"{}\"", workload_filename)))
+        .x_axis(Axis::new().title(Title::new("Time (sec)")))
+        .y_axis(Axis::new().title(Title::new("Size (bytes)")))
+        .legend(Legend::new()));
+
+    let trace = Scatter::new(
+        metrics.iter().map(|el| el.0.time_required.as_secs_f32()).collect(),
+        metrics.iter().map(|el| el.0.compressed_size).collect())
+        .text_template(".3s")
+        .name(format!("Workload {}", workload_filename))
+        .text_array(metrics.iter().map(|el| el.0.algorithm.name()).collect());
+    plot.add_trace(trace);
+
+    plot.write_html(format!("results/convex-hull-{}.html", workload_filename));
+
+    // Benefit plot for a specific workload
+    let mut plot = Plot::new();
+    plot.set_layout(Layout::new()
+        .title(Title::new(&*format!("Benefits for workload \"{}\"", workload_filename)))
+        .x_axis(Axis::new().title(Title::new("Useful setup")).dtick(1.))
+        .y_axis(Axis::new().title(Title::new("Benefit (bytes/sec)")).tick_format(".3s"))
+        .legend(Legend::new()));
+    let trace = Bar::new(
+        metrics.iter().skip(1).enumerate().map(|(i, _)| (i + 2) as u32).collect(), // +1 due to the skip and +1 since we start from 0
+        metrics.iter().skip(1).map(|el| el.1).collect())
+        .name(format!("Workload '{}'", workload_filename));
+
+    plot.add_trace(trace);
+
+    plot.write_html(format!("results/benefit-{}.html", workload_filename));
+}
+

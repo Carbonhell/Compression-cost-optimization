@@ -127,7 +127,7 @@ impl MixingPolicyMultipleWorkloads<'_> {
                     .collect()
             });
         let optimal_combination = if let None = optimal_combination {
-            log::debug!("Using the most expensive combination");
+            log::debug!("Checking the most expensive combination");
             let most_expensive_combination = self
                 .lower_convex_hull
                 .last()
@@ -310,7 +310,7 @@ impl MixingPolicy<'_> {
             });
         // Special case: time budget allows for the most expensive algorithm to be used
         let optimal_mix = if let None = optimal_mix {
-            log::debug!("Using the most expensive mix");
+            log::debug!("Checking the most expensive mix");
             let most_expensive_algorithm = self
                 .lower_convex_hull
                 .last()
