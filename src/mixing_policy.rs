@@ -1,4 +1,3 @@
-use std::io::Cursor;
 use std::time::{Duration, Instant};
 use crate::algorithms::AlgorithmMetrics;
 use crate::convex_hull::convex_hull_graham;
@@ -153,13 +152,13 @@ impl MixingPolicyMultipleWorkloads<'_> {
         optimal_combination
     }
 
-    pub fn apply_optimal_combination(optimal_mixes: &Vec<OptimalMix>, workloads: &Vec<Workload>, total_time_budget: Duration) -> Vec<Vec<u8>> {
+    pub fn apply_optimal_combination(optimal_mixes: &Vec<OptimalMix>, workloads: &mut Vec<Workload>, total_time_budget: Duration) {
         log::info!("Applying optimal combination");
         let instant = Instant::now();
-        let results = optimal_mixes
+        optimal_mixes
             .iter()
             .zip(workloads)
-            .map(|(optimal_mix, workload)| {
+            .for_each(|(optimal_mix, workload)| {
                 match optimal_mix {
                     OptimalMix::Single(metrics) => {
                         let instant = Instant::now();
@@ -169,22 +168,18 @@ impl MixingPolicyMultipleWorkloads<'_> {
                         data
                     }
                     OptimalMix::Normal((metric_a, metric_b), fraction) => {
-                        let workload_partition = ((workload.data.len() as f64) * fraction).round() as usize;
-                        log::info!("Applying mix of algorithms with fraction {} and partition at index {} (data len is {})", fraction, workload_partition, workload.data.len());
-                        let mut cursor = Cursor::new(Vec::with_capacity(workload.data.len()));
+                        let workload_partition = ((workload.data.metadata().unwrap().len() as f64) * fraction).round() as usize;
+                        log::info!("Applying mix of algorithms with fraction {} and partition at index {} (data len is {})", fraction, workload_partition, workload.data.metadata().unwrap().len());
                         let instant = Instant::now();
                         log::debug!("Applying optimal mix: before algorithm A {:?}", instant.elapsed());
-                        metric_a.algorithm.execute_with_target(&Workload::new(workload.name.clone(), &workload.data[..workload_partition], workload.time_budget), &mut cursor);
+                        metric_a.algorithm.execute_with_target(workload, workload_partition, true);
                         log::debug!("Applying optimal mix: after algorithm A, before B {:?}", instant.elapsed());
-                        metric_b.algorithm.execute_with_target(&Workload::new(workload.name.clone(), &workload.data[workload_partition..], workload.time_budget), &mut cursor);
+                        metric_b.algorithm.execute_with_target(workload, workload_partition, false);
                         log::info!("Time passed for workload {}: {:?}", workload.name, instant.elapsed());
-                        cursor.into_inner()
                     }
                 }
-            })
-            .collect::<Vec<_>>();
+            });
         log::info!("Time passed for the application of all mixes: {:?} (should be near the time budget which is {:?})", instant.elapsed(), total_time_budget);
-        results
     }
 }
 
@@ -328,23 +323,21 @@ impl MixingPolicy<'_> {
         optimal_mix
     }
 
-    pub fn apply_optimal_mix(optimal_mix: &OptimalMix, workload: &Workload) -> Vec<u8> {
+    pub fn apply_optimal_mix(optimal_mix: &OptimalMix, workload: &mut Workload) {
         match optimal_mix {
             OptimalMix::Single(metrics) => {
                 log::debug!("Applying single algorithm");
                 metrics.algorithm.execute(workload)
             }
             OptimalMix::Normal((metric_a, metric_b), fraction) => {
-                let workload_partition = ((workload.data.len() as f64) * fraction).round() as usize;
-                log::debug!("Applying mix of algorithms with fraction {} and partition at index {} (data len is {})", fraction, workload_partition, workload.data.len());
-                let mut cursor = Cursor::new(Vec::with_capacity(workload.data.len()));
+                let workload_partition = ((workload.data.metadata().unwrap().len() as f64) * fraction).round() as usize;
+                log::debug!("Applying mix of algorithms with fraction {} and partition at index {} (data len is {})", fraction, workload_partition, workload.data.metadata().unwrap().len());
                 let instant = Instant::now();
                 log::debug!("Applying optimal mix: before algorithm A {:?}", instant.elapsed());
-                metric_a.algorithm.execute_with_target(&Workload::new(workload.name.clone(), &workload.data[..workload_partition], workload.time_budget), &mut cursor);
+                metric_a.algorithm.execute_with_target(workload, workload_partition, true);
                 log::debug!("Applying optimal mix: after algorithm A, before B {:?}", instant.elapsed());
-                metric_b.algorithm.execute_with_target(&Workload::new(workload.name.clone(), &workload.data[workload_partition..], workload.time_budget), &mut cursor);
+                metric_b.algorithm.execute_with_target(workload, workload_partition, false);
                 log::info!("Time passed: {:?} (should be near the time budget which is {:?})", instant.elapsed(), workload.time_budget);
-                cursor.into_inner()
             }
         }
     }
@@ -360,8 +353,10 @@ pub enum OptimalMix<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
+    use std::fs::File;
+    use std::io::Write;
     use std::time::Duration;
+    use tempfile::tempfile;
     use crate::algorithms::{Algorithm, AlgorithmMetrics, ByteSize};
     use crate::mixing_policy::MixingPolicy;
     use crate::workload::Workload;
@@ -377,41 +372,45 @@ mod tests {
             "Mock".to_string()
         }
 
-        fn compressed_size(&mut self, _: &Workload) -> ByteSize {
+        fn compressed_size(&self) -> ByteSize {
             self.compressed_size
         }
 
-        fn time_required(&mut self, _: &Workload) -> Duration {
+        fn time_required(&self) -> Duration {
             self.time_required
         }
 
-        fn execute(&self, _: &Workload) -> Vec<u8> { Vec::new() }
+        fn execute(&self, _: &mut Workload) {  }
 
-        fn execute_with_target(&self, _w: &Workload, _target: &mut Cursor<Vec<u8>>) {}
+        fn execute_on_tmp(&self, _: &mut Workload) -> File { tempfile().unwrap() }
+
+        fn execute_with_target(&self, _: &mut Workload, _: usize, _: bool) {}
     }
 
     #[test]
     fn paper_polygonal_chain() {
         let _ = env_logger::try_init();
-        let workload = Workload::new(String::from("test"), "test".as_bytes(), Duration::from_secs(5));
+        let mut tmp = tempfile().unwrap();
+        tmp.write_all("test".as_bytes()).unwrap();
+        let workload = Workload::new(String::from("test"), tmp, Duration::from_secs(5));
         let algorithm_metrics = vec![
-            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 1_000_000, time_required: Duration::from_secs(2) }), &workload),
-            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 800_000 as ByteSize, time_required: Duration::from_secs(4) }), &workload),
-            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 600_000 as ByteSize, time_required: Duration::from_secs(6) }), &workload),
-            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 580_000 as ByteSize, time_required: Duration::from_secs(7) }), &workload),
-            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 400_000 as ByteSize, time_required: Duration::from_secs(8) }), &workload),
-            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 300_000 as ByteSize, time_required: Duration::from_secs(10) }), &workload),
+            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 1_000_000, time_required: Duration::from_secs(2) })),
+            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 800_000 as ByteSize, time_required: Duration::from_secs(4) })),
+            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 600_000 as ByteSize, time_required: Duration::from_secs(6) })),
+            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 580_000 as ByteSize, time_required: Duration::from_secs(7) })),
+            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 400_000 as ByteSize, time_required: Duration::from_secs(8) })),
+            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 300_000 as ByteSize, time_required: Duration::from_secs(10) })),
         ];
         let algorithm_metrics = algorithm_metrics.iter().collect();
         let mixing_policy = MixingPolicy::new(algorithm_metrics);
 
         // Fetched on https://ch.mathworks.com/help/matlab/ref/convhull.html by using time_required as x and compressed_size as y, according to the paper plots
         let expected_algorithm_metrics = vec![
-            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 1_000_000, time_required: Duration::from_secs(2) }), &workload),
-            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 800_000, time_required: Duration::from_secs(4) }), &workload),
-            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 600_000 as ByteSize, time_required: Duration::from_secs(6) }), &workload),
-            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 400_000 as ByteSize, time_required: Duration::from_secs(8) }), &workload),
-            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 300_000 as ByteSize, time_required: Duration::from_secs(10) }), &workload),
+            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 1_000_000, time_required: Duration::from_secs(2) })),
+            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 800_000, time_required: Duration::from_secs(4) })),
+            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 600_000 as ByteSize, time_required: Duration::from_secs(6) })),
+            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 400_000 as ByteSize, time_required: Duration::from_secs(8) })),
+            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 300_000 as ByteSize, time_required: Duration::from_secs(10) })),
         ];
         let expected_algorithm_metrics: Vec<_> = expected_algorithm_metrics.iter().collect();
         let obtained_algorithm_metrics = mixing_policy.lower_convex_hull.iter().map(|el| el.0).collect::<Vec<&AlgorithmMetrics>>();
@@ -421,14 +420,16 @@ mod tests {
     #[test]
     fn optimal_mix() {
         let _ = env_logger::try_init();
-        let workload = Workload::new(String::from("test"), "test".as_bytes(), Duration::from_secs(7));
+        let mut tmp = tempfile().unwrap();
+        tmp.write_all("test".as_bytes()).unwrap();
+        let workload = Workload::new(String::from("test"), tmp, Duration::from_secs(7));
         let algorithm_metrics = vec![
-            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 1_000_000, time_required: Duration::from_secs(2) }), &workload),
-            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 800_000 as ByteSize, time_required: Duration::from_secs(4) }), &workload),
-            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 600_000 as ByteSize, time_required: Duration::from_secs(6) }), &workload),
-            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 580_000 as ByteSize, time_required: Duration::from_secs(7) }), &workload),
-            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 400_000 as ByteSize, time_required: Duration::from_secs(8) }), &workload),
-            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 300_000 as ByteSize, time_required: Duration::from_secs(10) }), &workload),
+            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 1_000_000, time_required: Duration::from_secs(2) })),
+            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 800_000 as ByteSize, time_required: Duration::from_secs(4) })),
+            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 600_000 as ByteSize, time_required: Duration::from_secs(6) })),
+            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 580_000 as ByteSize, time_required: Duration::from_secs(7) })),
+            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 400_000 as ByteSize, time_required: Duration::from_secs(8) })),
+            AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 300_000 as ByteSize, time_required: Duration::from_secs(10) })),
         ];
         let algorithm_metrics = algorithm_metrics.iter().collect();
         let mixing_policy = MixingPolicy::new(algorithm_metrics);

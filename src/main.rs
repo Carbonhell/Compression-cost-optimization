@@ -1,4 +1,6 @@
 use std::error::Error;
+use std::fmt;
+use std::fs::File;
 use std::str::FromStr;
 use std::time::Duration;
 use clap::Parser;
@@ -7,6 +9,7 @@ use mix_compression::algorithms::Algorithm;
 use mix_compression::algorithms::bzip2::{Bzip2, Bzip2CompressionLevel};
 use mix_compression::algorithms::gzip::{Gzip, GzipCompressionLevel};
 use mix_compression::algorithms::xz2::{Xz2, Xz2CompressionLevel};
+use mix_compression::workload::Workload;
 
 /// Parse a single key-value pair
 fn parse_key_val<T, U>(s: &str) -> Result<(T, U), Box<dyn Error + Send + Sync + 'static>>
@@ -73,61 +76,80 @@ impl FromStr for Alg {
     }
 }
 
+impl fmt::Display for Alg {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Alg::Gzip => write!(f, "gzip"),
+            Alg::Bzip2 => write!(f, "bzip2"),
+            Alg::Xz2 => write!(f, "xz2"),
+        }
+    }
+}
+
 fn main() {
     env_logger::init();
     let args = Args::parse();
     if args.documents.len() == 1 {
         let (file_name, alg) = args.documents.first().unwrap();
         let mut algorithms: Vec<Box<dyn Algorithm>> = Vec::with_capacity(9);
+
+        let mut workload = Workload::new(format!("{}_{}", alg, file_name),
+                                         File::open(format!("data/{}", file_name))
+                                         .expect("Missing data file. Ensure the file exists and that it has been correctly placed in the project data folder.")
+                                         , Duration::from_secs_f64(args.budget));
         match alg {
             Alg::Gzip => {
                 for i in 1..=9 {
-                    algorithms.push(Box::new(Gzip::new(GzipCompressionLevel(i))))
+                    algorithms.push(Box::new(Gzip::new(&mut workload, GzipCompressionLevel(i))))
                 }
             }
             Alg::Bzip2 => {
                 for i in 1..=9 {
-                    algorithms.push(Box::new(Bzip2::new(Bzip2CompressionLevel(i))))
+                    algorithms.push(Box::new(Bzip2::new(&mut workload, Bzip2CompressionLevel(i))))
                 }
             }
             Alg::Xz2 => {
                 for i in 1..=9 {
-                    algorithms.push(Box::new(Xz2::new(Xz2CompressionLevel(i))))
+                    algorithms.push(Box::new(Xz2::new(&mut workload, Xz2CompressionLevel(i))))
                 }
             }
         }
         log::info!("Applying mixed compression to single file '{}'", file_name);
-        process_single_document(file_name.as_str(), args.budget, algorithms);
+        process_single_document(workload, algorithms);
     } else {
-        let mut workload_filenames = Vec::new();
+        let mut workloads = Vec::new();
         let mut workload_algorithms = Vec::new();
-        for (workload, alg) in args.documents {
+        for (workload_filename, alg) in args.documents {
             let mut algorithms: Vec<Box<dyn Algorithm>> = Vec::with_capacity(9);
+            let mut workload = Workload::new(format!("{}_{}", alg, workload_filename),
+                                             File::open(format!("data/{}", workload_filename))
+                                                 .expect("Missing data file. Ensure the file exists and that it has been correctly placed in the project data folder.")
+                                             , Duration::from_secs(0));
             match alg {
                 Alg::Gzip => {
                     for i in 1..=9 {
-                        algorithms.push(Box::new(Gzip::new(GzipCompressionLevel(i))))
+                        algorithms.push(Box::new(Gzip::new(&mut workload, GzipCompressionLevel(i))))
                     }
                 }
                 Alg::Bzip2 => {
                     for i in 1..=9 {
-                        algorithms.push(Box::new(Bzip2::new(Bzip2CompressionLevel(i))))
+                        algorithms.push(Box::new(Bzip2::new(&mut workload, Bzip2CompressionLevel(i))))
                     }
                 }
                 Alg::Xz2 => {
                     for i in 1..=9 {
-                        algorithms.push(Box::new(Xz2::new(Xz2CompressionLevel(i))))
+                        algorithms.push(Box::new(Xz2::new(&mut workload, Xz2CompressionLevel(i))))
                     }
                 }
             }
-            workload_filenames.push(workload);
+            workloads.push(workload);
             workload_algorithms.push(algorithms);
         }
         log::info!(
             "Applying mixed compression to multiple documents: {:?}, with duration: {}s",
-            workload_filenames,
+            workloads.iter().map(|el| el.name.clone()).collect::<Vec<_>>(),
             args.budget);
-        process_multiple_documents(workload_filenames, workload_algorithms, Duration::from_secs_f64(args.budget))
+        process_multiple_documents(workloads, workload_algorithms, Duration::from_secs_f64(args.budget))
     }
 }
 
