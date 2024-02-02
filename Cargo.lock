@@ -633,6 +633,7 @@ dependencies = [
  "flate2",
  "log",
  "plotly",
+ "rand",
  "tempfile",
  "xz2",
 ]

@@ -357,7 +357,7 @@ mod tests {
     use std::io::Write;
     use std::time::Duration;
     use tempfile::tempfile;
-    use crate::algorithms::{Algorithm, AlgorithmMetrics, ByteSize};
+    use crate::algorithms::{Algorithm, AlgorithmMetrics, BlockInfo, ByteSize};
     use crate::mixing_policy::MixingPolicy;
     use crate::workload::Workload;
 
@@ -382,7 +382,7 @@ mod tests {
 
         fn execute(&self, _: &mut Workload) {  }
 
-        fn execute_on_tmp(&self, _: &mut Workload) -> File { tempfile().unwrap() }
+        fn execute_on_tmp(&self, _: &mut Workload, _: Option<BlockInfo>) -> File { tempfile().unwrap() }
 
         fn execute_with_target(&self, _: &mut Workload, _: usize, _: bool) {}
     }
@@ -392,7 +392,6 @@ mod tests {
         let _ = env_logger::try_init();
         let mut tmp = tempfile().unwrap();
         tmp.write_all("test".as_bytes()).unwrap();
-        let workload = Workload::new(String::from("test"), tmp, Duration::from_secs(5));
         let algorithm_metrics = vec![
             AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 1_000_000, time_required: Duration::from_secs(2) })),
             AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 800_000 as ByteSize, time_required: Duration::from_secs(4) })),

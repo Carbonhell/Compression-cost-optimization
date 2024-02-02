@@ -51,12 +51,10 @@ pub fn process_multiple_documents(mut workloads: Vec<Workload>, workload_algorit
     let mut algorithms = Vec::new();
     workload_algorithms
         .into_iter()
-        .zip(&workloads)
-        .for_each(|(algorithm, workload)| {
+        .for_each(|algorithm| {
             let compression_configurations: Vec<_> = algorithm
                 .into_iter()
                 .map(|alg| {
-                    log::info!("Calculating metrics for algorithm {:?}, workload {:?}", alg.name(), workload.name);
                     AlgorithmMetrics::new(alg)
                 })
                 .collect();

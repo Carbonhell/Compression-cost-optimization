@@ -3,9 +3,10 @@ use std::fmt;
 use std::fs::File;
 use std::str::FromStr;
 use std::time::Duration;
-use clap::Parser;
+use clap::{CommandFactory, Parser};
+use clap::error::ErrorKind;
 use mix_compression::{process_multiple_documents, process_single_document};
-use mix_compression::algorithms::Algorithm;
+use mix_compression::algorithms::{Algorithm, EstimateMetadata};
 use mix_compression::algorithms::bzip2::{Bzip2, Bzip2CompressionLevel};
 use mix_compression::algorithms::gzip::{Gzip, GzipCompressionLevel};
 use mix_compression::algorithms::xz2::{Xz2, Xz2CompressionLevel};
@@ -25,6 +26,15 @@ fn parse_key_val<T, U>(s: &str) -> Result<(T, U), Box<dyn Error + Send + Sync + 
     Ok((s[..pos].parse()?, s[pos + 1..].parse()?))
 }
 
+/// Parse a string argument into a f64, ensuring it exists within a 0..=1 range
+fn parse_ratio(s: &str) -> Result<f64, Box<dyn Error + Send + Sync + 'static>> {
+    let float = s.parse::<f64>().map_err(|e| format!("invalid f64 argument: {s} (cannot parse)"))?;
+    if float < 0. || float > 1. {
+        Err(format!("invalid f64 argument: {s} (out of 0..=1 range)"))?;
+    }
+    Ok(float)
+}
+
 /// A general optimization framework to allocate computing resources to the compression of massive and heterogeneous data sets.
 ///
 /// Specify which documents to compress (from the `data` folder) and the time budget to allocate for the compression.
@@ -35,7 +45,7 @@ fn parse_key_val<T, U>(s: &str) -> Result<(T, U), Box<dyn Error + Send + Sync + 
 /// The mixing strategy works by mixing compression settings (the level) for a specific algorithm.
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
-struct Args {
+struct Cli {
     /// List of file names from the `data` folder to process.
     #[arg(short, long, required(true), value_delimiter = ',', value_parser = parse_key_val::< String, Alg >)]
     documents: Vec<(String, Alg)>,
@@ -43,6 +53,18 @@ struct Args {
     /// Time budget, represented as a f64 value describing the budget in seconds.
     #[arg(short, long)]
     budget: f64,
+
+    /// Estimate metrics calculation by using a portion of the workload instead of executing a full run. Requires specifying --estimate-block-ratio and --estimate-block-number flags. Avoid using estimation for small workloads (e.g. workloads requiring less than a 100 seconds budget)
+    #[arg(short, long)]
+    estimate: bool,
+
+    /// The fraction of the workload to use for algorithm metrics estimation (between 0. and 1.). Bigger means better estimates but slower execution.
+    #[arg(short, long, value_parser = parse_ratio)]
+    estimate_block_ratio: Option<f64>,
+
+    /// The number of blocks to use to estimate the algorithm metrics. More blocks generate a better averaged estimate, but the execution is slower.
+    #[arg(short, long)]
+    estimate_block_number: Option<u64>,
 }
 
 #[derive(Debug)]
@@ -88,7 +110,22 @@ impl fmt::Display for Alg {
 
 fn main() {
     env_logger::init();
-    let args = Args::parse();
+    let args = Cli::parse();
+    let estimate_metadata = if args.estimate {
+        if let (Some(block_number), Some(block_ratio)) = (args.estimate_block_number, args.estimate_block_ratio) {
+            Some(EstimateMetadata{ block_number, block_ratio })
+        } else {
+            let mut cmd = Cli::command();
+            cmd.error(
+                ErrorKind::MissingRequiredArgument,
+                "Estimating algorithm metrics requires passing both the --estimate-block-number and --estimate-block-ratio flags.",
+            )
+                .exit();
+        }
+    } else {
+        None
+    };
+
     if args.documents.len() == 1 {
         let (file_name, alg) = args.documents.first().unwrap();
         let mut algorithms: Vec<Box<dyn Algorithm>> = Vec::with_capacity(9);
@@ -97,20 +134,21 @@ fn main() {
                                          File::open(format!("data/{}", file_name))
                                          .expect("Missing data file. Ensure the file exists and that it has been correctly placed in the project data folder.")
                                          , Duration::from_secs_f64(args.budget));
+
         match alg {
             Alg::Gzip => {
                 for i in 1..=9 {
-                    algorithms.push(Box::new(Gzip::new(&mut workload, GzipCompressionLevel(i))))
+                    algorithms.push(Box::new(Gzip::new(&mut workload, GzipCompressionLevel(i), estimate_metadata)))
                 }
             }
             Alg::Bzip2 => {
                 for i in 1..=9 {
-                    algorithms.push(Box::new(Bzip2::new(&mut workload, Bzip2CompressionLevel(i))))
+                    algorithms.push(Box::new(Bzip2::new(&mut workload, Bzip2CompressionLevel(i), estimate_metadata)))
                 }
             }
             Alg::Xz2 => {
                 for i in 1..=9 {
-                    algorithms.push(Box::new(Xz2::new(&mut workload, Xz2CompressionLevel(i))))
+                    algorithms.push(Box::new(Xz2::new(&mut workload, Xz2CompressionLevel(i), estimate_metadata)))
                 }
             }
         }
@@ -128,17 +166,17 @@ fn main() {
             match alg {
                 Alg::Gzip => {
                     for i in 1..=9 {
-                        algorithms.push(Box::new(Gzip::new(&mut workload, GzipCompressionLevel(i))))
+                        algorithms.push(Box::new(Gzip::new(&mut workload, GzipCompressionLevel(i), estimate_metadata)))
                     }
                 }
                 Alg::Bzip2 => {
                     for i in 1..=9 {
-                        algorithms.push(Box::new(Bzip2::new(&mut workload, Bzip2CompressionLevel(i))))
+                        algorithms.push(Box::new(Bzip2::new(&mut workload, Bzip2CompressionLevel(i), estimate_metadata)))
                     }
                 }
                 Alg::Xz2 => {
                     for i in 1..=9 {
-                        algorithms.push(Box::new(Xz2::new(&mut workload, Xz2CompressionLevel(i))))
+                        algorithms.push(Box::new(Xz2::new(&mut workload, Xz2CompressionLevel(i), estimate_metadata)))
                     }
                 }
             }

@@ -20,7 +20,7 @@ pub trait Algorithm: Debug {
     fn time_required(&self) -> Duration;
     /// Runs the compression algorithm on some workload.
     fn execute(&self, w: &mut Workload);
-    fn execute_on_tmp(&self, w: &mut Workload) -> File;
+    fn execute_on_tmp(&self, w: &mut Workload, block_info: Option<BlockInfo>) -> File;
 
     /// Runs the compression algorithm on some workload, by writing on a cursor target to optimize memory writes.
     fn execute_with_target(&self, w: &mut Workload, partition: usize, first_half: bool);
@@ -77,4 +77,15 @@ impl Point for AlgorithmMetrics {
     fn y(&self) -> f64 {
         self.compressed_size as f64
     }
+}
+
+#[derive(Copy, Clone)]
+pub struct EstimateMetadata {
+    pub block_number: u64,
+    pub block_ratio: f64,
+}
+
+pub struct BlockInfo {
+    pub block_size: u64,
+    pub block_end_index: u64,
 }
