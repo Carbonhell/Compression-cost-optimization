@@ -28,7 +28,7 @@ fn parse_key_val<T, U>(s: &str) -> Result<(T, U), Box<dyn Error + Send + Sync + 
 
 /// Parse a string argument into a f64, ensuring it exists within a 0..=1 range
 fn parse_ratio(s: &str) -> Result<f64, Box<dyn Error + Send + Sync + 'static>> {
-    let float = s.parse::<f64>().map_err(|e| format!("invalid f64 argument: {s} (cannot parse)"))?;
+    let float = s.parse::<f64>().map_err(|_| format!("invalid f64 argument: {s} (cannot parse)"))?;
     if float < 0. || float > 1. {
         Err(format!("invalid f64 argument: {s} (out of 0..=1 range)"))?;
     }
@@ -46,7 +46,10 @@ fn parse_ratio(s: &str) -> Result<f64, Box<dyn Error + Send + Sync + 'static>> {
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    /// List of file names from the `data` folder to process.
+    /// List of file names from the `data` folder to process, associated to the algorithm to use and separated with a comma.
+    /// Algorithms currently supported: gzip, bzip2, xz2.
+    ///
+    /// For example: `RLbook2020.pdf=gzip,cyber.pdf=bzip2` will set up a mix job using gzip for `RLbook2020.pdf` and bzip2 for `cyber.pdf`. Documents can be repeated as long as they use different algorithms, e.g. `cyber.pdf=gzip,cyber.pdf=xz2`.
     #[arg(short, long, required(true), value_delimiter = ',', value_parser = parse_key_val::< String, Alg >)]
     documents: Vec<(String, Alg)>,
 
