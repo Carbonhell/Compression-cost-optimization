@@ -147,6 +147,23 @@ fn draw_multiple_workloads_plots(algorithms: &Vec<Vec<AlgorithmMetrics>>, mixing
         .map(|metrics| metrics.len())
         .max()
         .unwrap();
+    let tags = algorithms
+        .iter()
+        .map(|metrics| {
+            metrics.iter().map(|metric| metric.algorithm.name()).collect::<Vec<_>>()
+        })
+        .reduce(|acc, el| {
+            acc
+                .iter()
+                .zip(el)
+                .map(|(prev, curr)| {
+                    let mut new_str = prev.clone();
+                    new_str.push_str(&format!(", {}", curr));
+                    new_str
+                })
+                .collect::<Vec<_>>()
+        }).unwrap();
+
     let naive_x = algorithms
         .iter()
         .map(|metrics| {
@@ -203,7 +220,7 @@ fn draw_multiple_workloads_plots(algorithms: &Vec<Vec<AlgorithmMetrics>>, mixing
     let trace_naive = Scatter::new(naive_x, naive_y)
         .text_template(".3s")
         .name("Naive mix")
-        .text_array((0..=max_alg_levels).map(|x| format!("Level {}", x)).collect());
+        .text_array(tags);
     plot.add_trace(trace_naive);
 
     plot.write_html("results/result.html");

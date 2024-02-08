@@ -1,6 +1,8 @@
 pub mod gzip;
 pub mod bzip2;
 pub mod xz2;
+#[cfg(feature = "image")]
+pub mod png;
 
 use std::cmp::Ordering;
 use std::fmt::Debug;

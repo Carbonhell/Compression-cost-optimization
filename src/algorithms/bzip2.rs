@@ -106,6 +106,8 @@ impl Algorithm for Bzip2 {
         let block_info = block_info.unwrap_or(BlockInfo{block_size: w.data.metadata().unwrap().len(), block_end_index: w.data.metadata().unwrap().len()});
         let mut start = block_info.block_end_index - block_info.block_size;
         let data_len = block_info.block_end_index;
+
+        w.data.seek(SeekFrom::Start(start)).unwrap();
         while start < data_len {
             let buffer_len = min(10_000_000, data_len - start);
             let mut buffer: Vec<u8> = vec![0; buffer_len as usize];

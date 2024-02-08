@@ -15,3 +15,8 @@ plotly = "0.8.4"
 clap = { version = "4.4.18", features = ["derive"] }
 tempfile = "3.9.0"
 rand = "0.8.5"
+
+image = { version = "0.24.8", optional = true, features = ["png"]}
+
+[features]
+image = ["dep:image"]

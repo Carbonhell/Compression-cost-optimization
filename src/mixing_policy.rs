@@ -199,41 +199,32 @@ impl MixingPolicy<'_> {
 
         algorithm_metrics.sort();
         log::debug!("Sorted metrics: {:?}", algorithm_metrics);
-        // All groups of 3 metrics follow the standard algorithm. Can result in an empty iterator if we have less than 3 metrics.
-        let polygonal_chain = algorithm_metrics
-            .windows(3)
-            .filter(|metric_group| !(metric_group[1].compressed_size >= metric_group[0].compressed_size || metric_group[1].time_required == metric_group[2].time_required))
-            .map(|metric_group| metric_group[1]);
+        let mut polygonal_chain = algorithm_metrics;
 
-        log::debug!("Initial polygonal chain state: {:?}", polygonal_chain.clone().collect::<Vec<&AlgorithmMetrics>>());
-        // The last algorithm is selected only on the basis of its compression ratio being better. Can result in an empty iterator if we only have 1 metric.
-        let last_algorithm_group = algorithm_metrics
-            .windows(2)
-            .last();
-        log::debug!("Last algorithm group: {:?}", last_algorithm_group);
-        let last_algorithm = match last_algorithm_group {
-            Some(metric_group) => {
-                let res = if !(metric_group[1].compressed_size >= metric_group[0].compressed_size) {
-                    Some(metric_group[1])
-                } else {
-                    None
-                };
-                res
+        let mut i = 0;
+        while i < polygonal_chain.len() {
+            log::debug!("Iteration {}, len is {}", i, polygonal_chain.len());
+            let prev_index = i.checked_sub(1);
+            let next_index = i + 1; // We're not going to handle huge combinations of algorithms
+
+            let prev_compressed_size = match prev_index {
+                Some(index) => polygonal_chain.get(index).map(|metric| metric.compressed_size).unwrap_or(u64::MAX),
+                None => u64::MAX
+            };
+            let curr_compressed_size = polygonal_chain.get(i).unwrap().compressed_size;
+            let curr_time_required = polygonal_chain.get(i).unwrap().time_required;
+
+            let next_time_required = polygonal_chain.get(next_index).map(|metric| metric.time_required).unwrap_or(Duration::MAX);
+
+            log::debug!("Checking params {} | {} | {} | {}", prev_compressed_size, curr_compressed_size, curr_time_required.as_secs_f64(), next_time_required.as_secs_f64());
+            if curr_compressed_size >= prev_compressed_size || curr_time_required == next_time_required {
+                polygonal_chain.remove(i);
+            } else {
+                i += 1;
             }
-            None => None
-        };
-        log::debug!("Last algorithm: {:?}", last_algorithm);
+        }
 
-        let polygonal_chain = polygonal_chain.chain(last_algorithm);
-
-        log::debug!("Polygonal chain with last algorithm added: {:?}", polygonal_chain.clone().collect::<Vec<&AlgorithmMetrics>>());
-        // The first algorithm is always selected.
-        let polygonal_chain: Vec<_> = algorithm_metrics.first()
-            .map(|m| *m)
-            .into_iter()
-            .chain(polygonal_chain)
-            .collect();
-        log::debug!("Polygonal chain with first algorithm added: {:?}", polygonal_chain);
+        log::debug!("Initial polygonal chain state: {:?}", polygonal_chain.clone());
 
         let convex_hull = convex_hull_graham(&polygonal_chain[..]);
 
