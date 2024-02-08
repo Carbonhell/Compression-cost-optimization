@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+</head>
+
+<body>
+    <div>
+        <script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js"></script>
+        <script src="https://cdn.plot.ly/plotly-2.12.1.min.js"></script>
+        <div id="plotly-html-element" class="plotly-graph-div" style="height:100%; width:100%;"></div>
+
+        <script type="module">
+            const graph_div = document.getElementById("plotly-html-element");
+            await Plotly.newPlot(graph_div, {
+  "data": [
+    {
+      "type": "scatter",
+      "name": "Workload gzip_enwiki-20240101-pagelinks.sql",
+      "x": [
+        141.52559,
+        204.80046,
+        291.16302,
+        351.95465,
+        597.4094,
+        1956.8966
+      ],
+      "y": [
+        14432502159,
+        11469710694,
+        10559218048,
+        10185808860,
+        10024511731,
+        9906441595
+      ],
+      "text": [
+        "Gzip_1",
+        "Gzip_2",
+        "Gzip_3",
+        "Gzip_5",
+        "Gzip_7",
+        "Gzip_8"
+      ],
+    "mode": "lines+markers+text",
+    "texttemplate": "%{text}:<br>Size: %{y}<br>Time: %{x}",
+    "textposition": "top"
+    }
+  ],
+  "layout": {
+    "title": {
+      "text": "Convex hull of workload \"gzip_enwiki-20240101-pagelinks.sql\""
+    },
+    "legend": {},
+    "xaxis": {
+      "title": {
+        "text": "Time (sec)"
+      }
+    },
+    "yaxis": {
+      "title": {
+        "text": "Size (bytes)"
+      }
+    }
+  },
+  "config": {}
+});
+        </script>
+    </div>
+</body>
+
+</html>

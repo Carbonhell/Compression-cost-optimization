@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+</head>
+
+<body>
+    <div>
+        <script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js"></script>
+        <script src="https://cdn.plot.ly/plotly-2.12.1.min.js"></script>
+        <div id="plotly-html-element" class="plotly-graph-div" style="height:100%; width:100%;"></div>
+
+        <script type="module">
+            const graph_div = document.getElementById("plotly-html-element");
+            await Plotly.newPlot(graph_div, {
+  "data": [
+    {
+      "type": "scatter",
+      "name": "Merged convex hull",
+      "x": [
+        2119.1816,
+        2127.6814,
+        2130.7368,
+        2200.272,
+        2285.9465,
+        2373.59,
+        2376.9468,
+        2458.6968,
+        2531.1252,
+        2534.1074,
+        2706.2014,
+        2758.6782,
+        2778.438,
+        3107.4753,
+        3128.7832,
+        3222.1296,
+        3265.5793,
+        5258.376,
+        8368.176,
+        8389.406
+      ],
+      "y": [
+        23558550000,
+        20746077000,
+        20597675000,
+        17599327000,
+        15865463000,
+        14948906000,
+        14917418000,
+        14457845000,
+        14067755000,
+        14055801000,
+        13425486000,
+        13280698000,
+        13266277000,
+        13133528000,
+        13128296000,
+        13123908000,
+        13122916000,
+        13092515000,
+        13071779000,
+        13071771000
+      ],
+      "text": [
+        "(Gzip_1,Gzip_1,Bzip2_1,LZMA_1)",
+        "(Gzip_1,Gzip_1,Bzip2_2,LZMA_1)",
+        "(Gzip_1,Gzip_2,Bzip2_2,LZMA_1)",
+        "(Gzip_2,Gzip_2,Bzip2_2,LZMA_1)",
+        "(Gzip_2,Gzip_2,Bzip2_4,LZMA_1)",
+        "(Gzip_3,Gzip_2,Bzip2_4,LZMA_1)",
+        "(Gzip_3,Gzip_3,Bzip2_4,LZMA_1)",
+        "(Gzip_3,Gzip_3,Bzip2_5,LZMA_1)",
+        "(Gzip_5,Gzip_3,Bzip2_5,LZMA_1)",
+        "(Gzip_5,Gzip_5,Bzip2_5,LZMA_1)",
+        "(Gzip_5,Gzip_5,Bzip2_8,LZMA_1)",
+        "(Gzip_5,Gzip_5,Bzip2_9,LZMA_1)",
+        "(Gzip_5,Gzip_7,Bzip2_9,LZMA_1)",
+        "(Gzip_7,Gzip_7,Bzip2_9,LZMA_1)",
+        "(Gzip_7,Gzip_7,Bzip2_9,LZMA_2)",
+        "(Gzip_7,Gzip_8,Bzip2_9,LZMA_2)",
+        "(Gzip_7,Gzip_8,Bzip2_9,LZMA_3)",
+        "(Gzip_8,Gzip_8,Bzip2_9,LZMA_3)",
+        "(Gzip_8,Gzip_8,Bzip2_9,LZMA_8)",
+        "(Gzip_8,Gzip_8,Bzip2_9,LZMA_9)"
+      ],
+        "mode": "lines+markers+text",
+        "texttemplate": "%{text}",
+        "textposition": "bottom"
+    },
+    {
+      "type": "scatter",
+      "name": "Naive mix",
+      "x": [
+        2119.18165,
+        2221.57981,
+        2412.6447900000003,
+        4450.5430400000005,
+        5130.59148,
+        5835.86234,
+        6125.15573,
+        8315.69911,
+        6867.8333
+      ],
+      "y": [
+        23558550000,
+        17594095000,
+        15548548000,
+        14827369000,
+        14042069000,
+        13794513000,
+        13430529000,
+        13216567000,
+        13232192000
+      ],
+      "text": [
+        "Level 0",
+        "Level 1",
+        "Level 2",
+        "Level 3",
+        "Level 4",
+        "Level 5",
+        "Level 6",
+        "Level 7",
+        "Level 8",
+        "Level 9"
+      ],
+        "mode": "lines+markers+text",
+        "texttemplate": "%{text}",
+        "textposition": "top"
+    }
+  ],
+  "layout": {
+    "title": {
+      "text": "Convex hull of workloads \"gzip_enwiki-20240101-pagelinks.sql,gzip_enwiki-20240101-langlinks.sql,bzip2_enwiki-20240101-pages-meta-history1.xml-p1p844,xz2_enwiki-20240101-pages-meta-history1.xml-p1p844\""
+    },
+    "legend": {},
+    "xaxis": {
+      "title": {
+        "text": "Time (sec)"
+      }
+    },
+    "yaxis": {
+      "title": {
+        "text": "Size (bytes)"
+      }
+    }
+  },
+  "config": {}
+});
+        </script>
+    </div>
+</body>
+
+</html>

@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+</head>
+
+<body>
+    <div>
+        <script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js"></script>
+        <script src="https://cdn.plot.ly/plotly-2.12.1.min.js"></script>
+        <div id="plotly-html-element" class="plotly-graph-div" style="height:100%; width:100%;"></div>
+
+        <script type="module">
+            const graph_div = document.getElementById("plotly-html-element");
+            await Plotly.newPlot(graph_div, {
+  "data": [
+    {
+      "type": "scatter",
+      "name": "Merged convex hull",
+      "x": [
+        1.4034387,
+        1.41353,
+        13.391823,
+        24.053806,
+        29.89022
+      ],
+      "y": [
+        175927116,
+        166757902,
+        129976238,
+        121534795,
+        121462147
+      ],
+      "text": [
+        "(PNG_Fast_Sub,PNG_Fast_Avg)",
+        "(PNG_Fast_Avg,PNG_Fast_Avg)",
+        "(PNG_Best_Up,PNG_Fast_Avg)",
+        "(PNG_Best_Up,PNG_Best_NoFilter)",
+        "(PNG_Best_Up,PNG_Best_Sub)"
+      ],
+        "mode": "lines+markers+text",
+        "texttemplate": "%{text}:<br>Size: %{y}<br>Time: %{x}",
+        "textposition": "top"
+    },
+    {
+      "type": "scatter",
+      "name": "Naive mix",
+      "x": [
+        1.7941868,
+        1.6257824,
+        1.4135300000000002,
+        1.4641893,
+        1.4041398,
+        1.417266,
+        19.7017022,
+        35.6929772,
+        36.2460155,
+        35.297349999999994,
+        29.4192253,
+        35.8032581
+      ],
+      "y": [
+        379145175,
+        166807346,
+        166757902,
+        169438497,
+        176426526,
+        173179778,
+        162052245,
+        127241968,
+        127173206,
+        127151602,
+        127475783,
+        123663739
+      ],
+      "text": [
+        "PNG_Fast_NoFilter, PNG_Fast_NoFilter",
+        "PNG_Fast_Adaptive, PNG_Fast_Adaptive",
+        "PNG_Fast_Avg, PNG_Fast_Avg",
+        "PNG_Fast_Paeth, PNG_Fast_Paeth",
+        "PNG_Fast_Sub, PNG_Fast_Sub",
+        "PNG_Fast_Up, PNG_Fast_Up",
+        "PNG_Best_NoFilter, PNG_Best_NoFilter",
+        "PNG_Best_Adaptive, PNG_Best_Adaptive",
+        "PNG_Best_Avg, PNG_Best_Avg",
+        "PNG_Best_Paeth, PNG_Best_Paeth",
+        "PNG_Best_Sub, PNG_Best_Sub",
+        "PNG_Best_Up, PNG_Best_Up"
+      ],
+        "mode": "lines+markers+text",
+        "texttemplate": "%{text}:<br>Size: %{y}<br>Time: %{x}",
+        "textposition": "top"
+    }
+  ],
+  "layout": {
+    "title": {
+      "text": "Convex hull of workloads \"png_venice.png,png_nasa.png\""
+    },
+    "legend": {},
+    "xaxis": {
+      "title": {
+        "text": "Time (sec)"
+      }
+    },
+    "yaxis": {
+      "title": {
+        "text": "Size (bytes)"
+      }
+    }
+  },
+  "config": {}
+});
+        </script>
+    </div>
+</body>
+
+</html>

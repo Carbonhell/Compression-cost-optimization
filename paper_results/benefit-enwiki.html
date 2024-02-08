@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+</head>
+
+<body>
+    <div>
+        <script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js"></script>
+        <script src="https://cdn.plot.ly/plotly-2.12.1.min.js"></script>
+        <div id="plotly-html-element" class="plotly-graph-div" style="height:100%; width:100%;"></div>
+
+        <script type="module">
+            const graph_div = document.getElementById("plotly-html-element");
+            await Plotly.newPlot(graph_div, {
+  "data": [
+    {
+      "type": "bar",
+      "x": [
+        "Workload #2 - Bzip2_2",
+        "Workload #1 - Gzip_2",
+        "Workload #0 - Gzip_2",
+        "Workload #2 - Bzip2_4",
+        "Workload #0 - Gzip_3",
+        "Workload #1 - Gzip_3",
+        "Workload #2 - Bzip2_5",
+        "Workload #0 - Gzip_5",
+        "Workload #1 - Gzip_5",
+        "Workload #2 - Bzip2_8",
+        "Workload #2 - Bzip2_9",
+        "Workload #1 - Gzip_7",
+        "Workload #0 - Gzip_7",
+        "Workload #3 - LZMA_2",
+        "Workload #1 - Gzip_8",
+        "Workload #3 - LZMA_3",
+        "Workload #0 - Gzip_8",
+        "Workload #3 - LZMA_8",
+        "Workload #3 - LZMA_9"
+      ],
+      "y": [
+        52.94493367145684,
+        25.533517369995483,
+        25.361849322838317,
+        24.270548117996547,
+        23.31807581520247,
+        23.161280973866972,
+        22.422569328325697,
+        22.360745186176736,
+        21.934700178475747,
+        21.80444350853111,
+        21.395761702459684,
+        19.477183845990712,
+        18.622017722423376,
+        17.90561866237887,
+        15.520611933967174,
+        14.478701967739571,
+        13.897036694264973,
+        12.70302818941065,
+        8.557768807503919
+      ]
+    }
+  ],
+  "layout": {
+    "title": {
+      "text": "Benefits for workloads \"gzip_enwiki-20240101-pagelinks.sql,gzip_enwiki-20240101-langlinks.sql,bzip2_enwiki-20240101-pages-meta-history1.xml-p1p844,xz2_enwiki-20240101-pages-meta-history1.xml-p1p844\""
+    },
+    "legend": {},
+    "xaxis": {
+        "automargin": true,
+      "title": {
+        "text": "Useful setup",
+          "standoff": 2,
+      },
+      "dtick": 1.0
+    },
+    "yaxis": {
+      "title": {
+        "text": "Benefit (bytes/sec)"
+      },
+      "tickformat": ".3s"
+    }
+  },
+  "config": {}
+});
+        </script>
+    </div>
+</body>
+
+</html>

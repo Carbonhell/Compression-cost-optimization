@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+</head>
+
+<body>
+    <div>
+        <script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js"></script>
+        <script src="https://cdn.plot.ly/plotly-2.12.1.min.js"></script>
+        <div id="plotly-html-element" class="plotly-graph-div" style="height:100%; width:100%;"></div>
+
+        <script type="module">
+            const graph_div = document.getElementById("plotly-html-element");
+            await Plotly.newPlot(graph_div, {
+  "data": [
+    {
+      "type": "scatter",
+      "name": "Workload bzip2_enwiki-20240101-pages-meta-history1.xml-p1p844",
+
+      "x": [
+        1748.8688,
+        1757.3684,
+        1843.043,
+        1924.7931,
+        2096.8872,
+        2149.364
+      ],
+      "y": [
+        7269307000,
+        4456834000,
+        2722970000,
+        2263397000,
+        1633082000,
+        1488294000
+      ],
+      "text": [
+        "Bzip2_1",
+        "Bzip2_2",
+        "Bzip2_4",
+        "Bzip2_5",
+        "Bzip2_8",
+        "Bzip2_9"
+      ],
+        "mode": "lines+markers+text",
+        "texttemplate": "%{text}:<br>Size: %{y}<br>Time: %{x}",
+        "textposition": "top"
+    }
+  ],
+  "layout": {
+    "title": {
+      "text": "Convex hull of workload \"bzip2_enwiki-20240101-pages-meta-history1.xml-p1p844\""
+    },
+    "legend": {},
+    "xaxis": {
+      "title": {
+        "text": "Time (sec)"
+      }
+    },
+    "yaxis": {
+      "title": {
+        "text": "Size (bytes)"
+      }
+    }
+  },
+  "config": {}
+});
+        </script>
+    </div>
+</body>
+
+</html>

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+</head>
+
+<body>
+    <div>
+        <script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js"></script>
+        <script src="https://cdn.plot.ly/plotly-2.12.1.min.js"></script>
+        <div id="plotly-html-element" class="plotly-graph-div" style="height:100%; width:100%;"></div>
+
+        <script type="module">
+            const graph_div = document.getElementById("plotly-html-element");
+            await Plotly.newPlot(graph_div, {
+  "data": [
+    {
+      "type": "bar",
+      "x": [
+        "Workload #0 - PNG_Fast_Avg",
+        "Workload #0 - PNG_Best_Up",
+        "Workload #1 - PNG_Best_NoFilter",
+        "Workload #1 - PNG_Best_Sub"
+      ],
+      "y": [
+        63.50069749750981,
+        21.550133002520578,
+        19.594654176373034,
+        13.603552965672803
+      ]
+    }
+  ],
+  "layout": {
+    "title": {
+      "text": "Benefits for workloads \"png_venice.png,png_nasa.png\""
+    },
+    "legend": {},
+    "xaxis": {
+      "title": {
+        "text": "Useful setup"
+      },
+      "dtick": 1.0
+    },
+    "yaxis": {
+      "title": {
+        "text": "Benefit (bytes/sec)"
+      },
+      "tickformat": ".3s"
+    }
+  },
+  "config": {}
+});
+        </script>
+    </div>
+</body>
+
+</html>

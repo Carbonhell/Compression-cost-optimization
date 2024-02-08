@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+</head>
+
+<body>
+    <div>
+        <script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js"></script>
+        <script src="https://cdn.plot.ly/plotly-2.12.1.min.js"></script>
+        <div id="plotly-html-element" class="plotly-graph-div" style="height:100%; width:100%;"></div>
+
+        <script type="module">
+            const graph_div = document.getElementById("plotly-html-element");
+            await Plotly.newPlot(graph_div, {
+  "data": [
+    {
+      "type": "scatter",
+      "name": "Workload png_venice.png",
+      "x": [
+        1.157767,
+        1.1635178,
+        8.068236
+      ],
+      "y": [
+        153508677,
+        144339463,
+        107557799
+      ],
+      "text": [
+        "PNG_Fast_Sub",
+        "PNG_Fast_Avg",
+        "PNG_Best_Up"
+      ],
+    "mode": "lines+markers+text",
+    "texttemplate": "%{text}:<br>Size: %{y}<br>Time: %{x}",
+    "textposition": "top"
+    }
+  ],
+  "layout": {
+    "title": {
+      "text": "Convex hull of workload \"png_venice.png\""
+    },
+    "legend": {},
+    "xaxis": {
+      "title": {
+        "text": "Time (sec)"
+      }
+    },
+    "yaxis": {
+      "title": {
+        "text": "Size (bytes)"
+      }
+    }
+  },
+  "config": {}
+});
+        </script>
+    </div>
+</body>
+
+</html>

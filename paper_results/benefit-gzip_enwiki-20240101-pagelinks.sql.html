@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+</head>
+
+<body>
+    <div>
+        <script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js"></script>
+        <script src="https://cdn.plot.ly/plotly-2.12.1.min.js"></script>
+        <div id="plotly-html-element" class="plotly-graph-div" style="height:100%; width:100%;"></div>
+
+        <script type="module">
+            const graph_div = document.getElementById("plotly-html-element");
+            await Plotly.newPlot(graph_div, {
+  "data": [
+    {
+      "type": "bar",
+      "x": [
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "y": [
+        46824141.701867476,
+        10542679.030965758,
+        6142443.7901552105,
+        657135.8725447777,
+        86849.02267746622
+      ],
+      "name": "Workload \u0027gzip_enwiki-20240101-pagelinks.sql\u0027"
+    }
+  ],
+  "layout": {
+    "title": {
+      "text": "Benefits for workload \"gzip_enwiki-20240101-pagelinks.sql\""
+    },
+    "legend": {},
+    "xaxis": {
+      "title": {
+        "text": "Useful setup"
+      },
+      "dtick": 1.0
+    },
+    "yaxis": {
+      "title": {
+        "text": "Benefit (bytes/sec)"
+      },
+      "tickformat": ".3s"
+    }
+  },
+  "config": {}
+});
+        </script>
+    </div>
+</body>
+
+</html>
