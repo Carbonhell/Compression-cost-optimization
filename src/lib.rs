@@ -4,7 +4,7 @@ use plotly::common::Title;
 use plotly::layout::{Axis, Legend};
 use crate::algorithms::{Algorithm, AlgorithmMetrics, ByteSize};
 use crate::mixing_policy::{MetricsWithBenefit, MixingPolicy, MixingPolicyMultipleWorkloads};
-use crate::workload::Workload;
+use crate::workload::{FolderWorkload, Workload};
 
 pub mod workload;
 pub mod algorithms;
@@ -24,7 +24,7 @@ pub fn process_single_document(mut workload: Workload, algorithms: Vec<Box<dyn A
     let mixing_policy = MixingPolicy::new(algorithms.iter().collect());
     draw_workload_plots(&mixing_policy.lower_convex_hull, &workload.name);
 
-    let optimal_mix = mixing_policy.optimal_mix(&workload);
+    let optimal_mix = mixing_policy.optimal_mix(workload.time_budget);
     match optimal_mix {
         Some(optimal_mix) => {
             MixingPolicy::apply_optimal_mix(&optimal_mix, &mut workload);
@@ -108,6 +108,40 @@ pub fn process_multiple_documents(mut workloads: Vec<Workload>, workload_algorit
                 }
                 None => {
                     log::warn!("The lower convex hull is empty. Is this an error?");
+                }
+            }
+        }
+    }
+}
+
+pub fn process_folder(mut workload: FolderWorkload, algorithms: Vec<Box<dyn Algorithm>>) {
+    log::debug!("Workload size: {:?}, time budget: {:?}", workload.data_files_size(), workload.time_budget);
+    let algorithms: Vec<_> = algorithms
+        .into_iter()
+        .map(|alg| {
+            AlgorithmMetrics::new(alg)
+        })
+        .collect();
+    let mixing_policy = MixingPolicy::new(algorithms.iter().collect());
+    draw_workload_plots(&mixing_policy.lower_convex_hull, &workload.name);
+
+    let optimal_mix = mixing_policy.optimal_mix(workload.time_budget);
+    match optimal_mix {
+        Some(optimal_mix) => {
+            MixingPolicy::apply_optimal_mix_folder(&optimal_mix, &mut workload);
+        }
+        None => {
+            let minimum_time_budget = mixing_policy
+                .lower_convex_hull
+                .iter()
+                .map(|el| el.0)
+                .min();
+            match minimum_time_budget {
+                Some(min) => {
+                    log::info!("No algorithm found that can compress data in the given time budget (Budget is {:?}, cheapest algorithm requires {:?}).", workload.time_budget, min.time_required)
+                }
+                None => {
+                    log::info!("The lower convex hull is empty. Is this an error?");
                 }
             }
         }

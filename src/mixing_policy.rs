@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 use crate::algorithms::AlgorithmMetrics;
 use crate::convex_hull::convex_hull_graham;
-use crate::workload::Workload;
+use crate::workload::{FolderWorkload, Workload};
 
 pub type MetricsWithBenefit<'a> = (&'a AlgorithmMetrics, f64);
 /// Also stores an identifier of the combination
@@ -276,12 +276,12 @@ impl MixingPolicy<'_> {
     }
 
     /// Can result in a none if the workload time budget doesn't allow even for the cheapest algorithm to be ran
-    pub fn optimal_mix(&self, workload: &Workload) -> Option<OptimalMix> {
+    pub fn optimal_mix(&self, workload_budget: Duration) -> Option<OptimalMix> {
         let optimal_mix = self
             .lower_convex_hull
             .windows(2)
             .find(|mix_group| {
-                if workload.time_budget >= mix_group[0].0.time_required && workload.time_budget <= mix_group[1].0.time_required {
+                if workload_budget >= mix_group[0].0.time_required && workload_budget <= mix_group[1].0.time_required {
                     return true;
                 }
                 false
@@ -289,7 +289,7 @@ impl MixingPolicy<'_> {
             .map(|group| {
                 let (expensive_alg, cheap_alg) = (group[1].0, group[0].0);
                 log::debug!("Valid groups for optimal mix:\n{:?}\n{:?}", cheap_alg, expensive_alg);
-                let fraction = (workload.time_budget.as_secs_f64() - cheap_alg.time_required.as_secs_f64()) / (expensive_alg.time_required.as_secs_f64() - cheap_alg.time_required.as_secs_f64());
+                let fraction = (workload_budget.as_secs_f64() - cheap_alg.time_required.as_secs_f64()) / (expensive_alg.time_required.as_secs_f64() - cheap_alg.time_required.as_secs_f64());
                 // Floating point calculation could result in two values not summing up evenly to 1, let's use u32s for this
                 let fraction = (fraction * 100.).round();
                 OptimalMix::Normal((expensive_alg, cheap_alg), fraction / 100.)
@@ -302,7 +302,7 @@ impl MixingPolicy<'_> {
                 .last()
                 .unwrap()
                 .0;
-            if most_expensive_algorithm.time_required < workload.time_budget {
+            if most_expensive_algorithm.time_required < workload_budget {
                 Some(OptimalMix::Single(most_expensive_algorithm))
             } else {
                 None
@@ -332,6 +332,25 @@ impl MixingPolicy<'_> {
             }
         }
     }
+
+    pub fn apply_optimal_mix_folder(optimal_mix: &OptimalMix, workload: &mut FolderWorkload) {
+        match optimal_mix {
+            OptimalMix::Single(metrics) => {
+                log::debug!("Applying single algorithm");
+                metrics.algorithm.execute_on_folder(workload, false, None, false);
+            }
+            OptimalMix::Normal((metric_a, metric_b), fraction) => {
+                let workload_partition = ((workload.data_files_size() as f64) * fraction).round() as usize;
+                log::debug!("Applying mix of algorithms with fraction {} and partition at index {} (data len is {})", fraction, workload_partition, workload.data_files_size());
+                let instant = Instant::now();
+                log::debug!("Applying optimal mix: before algorithm A {:?}", instant.elapsed());
+                metric_a.algorithm.execute_on_folder(workload, false, Some(workload_partition as u64), true);
+                log::debug!("Applying optimal mix: after algorithm A, before B {:?}", instant.elapsed());
+                metric_b.algorithm.execute_on_folder(workload, false, Some(workload_partition as u64), false);
+                log::info!("Time passed: {:?} (should be near the time budget which is {:?})", instant.elapsed(), workload.time_budget);
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -350,7 +369,7 @@ mod tests {
     use tempfile::tempfile;
     use crate::algorithms::{Algorithm, AlgorithmMetrics, BlockInfo, ByteSize};
     use crate::mixing_policy::MixingPolicy;
-    use crate::workload::Workload;
+    use crate::workload::{FolderWorkload, Workload};
 
     #[derive(Debug)]
     struct MockAlgorithm {
@@ -376,6 +395,8 @@ mod tests {
         fn execute_on_tmp(&self, _: &mut Workload, _: Option<BlockInfo>) -> File { tempfile().unwrap() }
 
         fn execute_with_target(&self, _: &mut Workload, _: usize, _: bool) {}
+
+        fn execute_on_folder(&self, _: &mut FolderWorkload, _: bool, _: Option<u64>, _: bool) -> u64 {0}
     }
 
     #[test]
@@ -412,7 +433,7 @@ mod tests {
         let _ = env_logger::try_init();
         let mut tmp = tempfile().unwrap();
         tmp.write_all("test".as_bytes()).unwrap();
-        let workload = Workload::new(String::from("test"), tmp, Duration::from_secs(7));
+        let workload = Workload::new(String::from("test"), tmp, Duration::from_secs(7), None);
         let algorithm_metrics = vec![
             AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 1_000_000, time_required: Duration::from_secs(2) })),
             AlgorithmMetrics::new(Box::new(MockAlgorithm { compressed_size: 800_000 as ByteSize, time_required: Duration::from_secs(4) })),
@@ -424,6 +445,6 @@ mod tests {
         let algorithm_metrics = algorithm_metrics.iter().collect();
         let mixing_policy = MixingPolicy::new(algorithm_metrics);
         println!("LCH: {:?}", mixing_policy.lower_convex_hull);
-        println!("{:?}", mixing_policy.optimal_mix(&workload));
+        println!("{:?}", mixing_policy.optimal_mix(workload.time_budget));
     }
 }

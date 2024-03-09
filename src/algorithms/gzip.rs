@@ -7,7 +7,7 @@ use flate2::write::GzEncoder;
 use rand::Rng;
 use tempfile::tempfile;
 use crate::algorithms::{Algorithm, BlockInfo, ByteSize, EstimateMetadata};
-use crate::workload::Workload;
+use crate::workload::{FolderWorkload, Workload};
 
 #[derive(Debug)]
 pub struct GzipCompressionLevel(pub u32);
@@ -149,6 +149,10 @@ impl Algorithm for Gzip {
         e.finish().unwrap();
         log::debug!("Execute with target: finished {:?}", instant.elapsed());
         w.data.rewind().unwrap();
+    }
+
+    fn execute_on_folder(&self, w: &mut FolderWorkload, write_to_tmp: bool, max_size: Option<u64>, first_half: bool) -> u64 {
+        unimplemented!()
     }
 }
 #[cfg(test)]
@@ -348,7 +352,7 @@ Allor si mosse, e io li tenni dietro."#;
         let mut tmp = tempfile().unwrap();
         tmp.write_all(MOCK_WORKLOAD_DATA.as_bytes()).unwrap();
         tmp.rewind().unwrap();
-        let mut workload = Workload::new(String::from("test"), tmp, Duration::from_secs(1));
+        let mut workload = Workload::new(String::from("test"), tmp, Duration::from_secs(1), None);
         let alg = Gzip::new(&mut workload, GzipCompressionLevel(9), None);
         alg.execute(&mut workload);
         println!("Time: {:?}", alg.time_required());

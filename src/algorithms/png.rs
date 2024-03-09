@@ -1,15 +1,17 @@
 use std::fs::File;
 use std::io::{Seek, SeekFrom, Write};
+use std::path::Path;
 use std::time::{Duration, Instant};
-use rand::Rng;
-use tempfile::tempfile;
-use crate::algorithms::{Algorithm, BlockInfo, ByteSize, EstimateMetadata};
-use crate::workload::Workload;
 
+use image::{ImageDecoder, ImageEncoder};
+use image::codecs::png::{PngDecoder, PngEncoder};
 pub use image::codecs::png::CompressionType as PNGCompressionType;
 pub use image::codecs::png::FilterType as PNGFilterType;
-use image::codecs::png::{PngDecoder, PngEncoder};
-use image::{ImageDecoder, ImageEncoder};
+use rand::Rng;
+use tempfile::tempfile;
+
+use crate::algorithms::{Algorithm, BlockInfo, ByteSize, EstimateMetadata};
+use crate::workload::{FolderWorkload, Workload};
 
 #[derive(Debug)]
 pub struct PNG {
@@ -28,6 +30,17 @@ impl PNG {
             time_required: None,
         };
         png.calculate_metrics(workload, estimate_metadata);
+        png
+    }
+
+    pub fn new_folder_workload(workload: &mut FolderWorkload, compression_type: PNGCompressionType, filter_type: PNGFilterType, estimate_metadata: Option<EstimateMetadata>) -> PNG {
+        let mut png = PNG {
+            compression_type,
+            filter_type,
+            compressed_size: None,
+            time_required: None,
+        };
+        png.calculate_metrics_folder(workload, estimate_metadata);
         png
     }
 
@@ -57,6 +70,24 @@ impl PNG {
             None => {
                 let current_unix = Instant::now();
                 let result = self.execute_on_tmp(workload, None).metadata().unwrap().len();
+                (result, current_unix.elapsed())
+            }
+        };
+        log::info!("Compressed size and time required calculated for algorithm {:?}:\nCompressed size: {:?};\nTime required: {:?}", self, compressed_size as ByteSize, time_required);
+        self.compressed_size = Some(compressed_size as ByteSize);
+        self.time_required = Some(time_required);
+    }
+
+    // in this case EstimateMetadata block_ratio indicates the % of files from the folder to use, and block_number how many repetitions with different files
+    fn calculate_metrics_folder(&mut self, workload: &mut FolderWorkload, estimate_metadata: Option<EstimateMetadata>) {
+        log::info!("Calculating compressed size and time required for algorithm {:?} (workload \"{}\") (estimating: {})", self, workload.name, estimate_metadata.is_some());
+        let (compressed_size, time_required) = match estimate_metadata {
+            Some(_) => {
+                unimplemented!("Estimating time required and compressed size for folder workloads is currently not supported.")
+            }
+            None => {
+                let current_unix = Instant::now();
+                let result = self.execute_on_folder(workload, true, None, false);
                 (result, current_unix.elapsed())
             }
         };
@@ -174,7 +205,7 @@ impl Algorithm for PNG {
             (0usize, end as usize, end)
         } else {
             let start = image_total_size as u32 - partitioned_total_size;
-            let end =  image_total_size as u32;
+            let end = image_total_size as u32;
             (start as usize, end as usize, end - start)
         };
 
@@ -205,5 +236,43 @@ impl Algorithm for PNG {
 
         log::debug!("Execute with target: finished {:?} - size {}, width {}, pos {}", instant.elapsed(), data_len, mixed_width, next_image_index);
         w.data.rewind().unwrap();
+    }
+
+    fn execute_on_folder(&self, w: &mut FolderWorkload, write_to_tmp: bool, max_size: Option<u64>, first_half: bool) -> u64 {
+        let mut size = 0;
+        // read_dir doesn't guarantee any consistent order - sort files by size
+        let mut files = Vec::new();
+        for path in w.get_data_folder() {
+            files.push(path.unwrap());
+        }
+        files.sort_by_key(|a| a.metadata().unwrap().len());
+        // If partially compressing the folder, partition the directory now
+        if let Some(max_size) = max_size {
+            let mut actual_files = Vec::new();
+            let mut data_size = 0;
+            for path in files {
+                let len = path.metadata().unwrap().len();
+                if data_size < max_size && first_half || data_size > max_size && !first_half {
+                    actual_files.push(path);
+                }
+                data_size += len;
+            }
+            files = actual_files;
+        }
+
+        for direntry in files {
+            let mut file_workload = Workload::new(
+                format!("{}-{:?}", w.name, direntry.file_name()),
+                File::open(direntry.path()).unwrap(),
+                w.time_budget,
+                Some(File::create(Path::new("results").join(&w.name).join(direntry.file_name())).unwrap())
+            );
+            let result = if write_to_tmp { self.execute_on_tmp(&mut file_workload, None) } else {
+                self.execute(&mut file_workload);
+                file_workload.result_file
+            };
+            size += result.metadata().unwrap().len();
+        }
+        size
     }
 }

@@ -7,7 +7,7 @@ use bzip2::write::BzEncoder;
 use rand::Rng;
 use tempfile::tempfile;
 use crate::algorithms::{Algorithm, BlockInfo, ByteSize, EstimateMetadata};
-use crate::workload::Workload;
+use crate::workload::{FolderWorkload, Workload};
 
 #[derive(Debug)]
 pub struct Bzip2CompressionLevel(pub u32);
@@ -148,5 +148,9 @@ impl Algorithm for Bzip2 {
         e.finish().unwrap();
         log::debug!("Execute with target: finished {:?}", instant.elapsed());
         w.data.rewind().unwrap();
+    }
+
+    fn execute_on_folder(&self, w: &mut FolderWorkload, write_to_tmp: bool, max_size: Option<u64>, first_half: bool) -> u64 {
+        unimplemented!()
     }
 }

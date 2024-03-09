@@ -1,17 +1,17 @@
 use std::error::Error;
 use std::fmt;
-use std::fs::File;
+use std::fs::{File, metadata};
 use std::io::{Read, Seek, SeekFrom};
 use std::str::FromStr;
 use std::time::Duration;
 use clap::{CommandFactory, Parser};
 use clap::error::ErrorKind;
-use mix_compression::{process_multiple_documents, process_single_document};
+use mix_compression::{process_folder, process_multiple_documents, process_single_document};
 use mix_compression::algorithms::{Algorithm, EstimateMetadata};
 use mix_compression::algorithms::bzip2::{Bzip2, Bzip2CompressionLevel};
 use mix_compression::algorithms::gzip::{Gzip, GzipCompressionLevel};
 use mix_compression::algorithms::xz2::{Xz2, Xz2CompressionLevel};
-use mix_compression::workload::Workload;
+use mix_compression::workload::{FolderWorkload, Workload};
 #[cfg(feature = "image")]
 use {
     mix_compression::algorithms::png::{PNG, PNGCompressionType, PNGFilterType},
@@ -222,12 +222,35 @@ fn main() {
 
     if args.documents.len() == 1 {
         let (file_name, alg) = args.documents.first().unwrap();
-        let mut algorithms: Vec<Box<dyn Algorithm>> = Vec::with_capacity(9);
+        let mut algorithms: Vec<Box<dyn Algorithm>> = Vec::new();
 
+        if metadata(format!("data/{}", file_name)).unwrap().is_dir() {
+            let mut workload = FolderWorkload::new(file_name.clone(), Duration::from_secs_f64(budget));
+            match alg {
+                Alg::Png => {
+                    #[cfg(feature = "image")]
+                    for compression_type in vec![PNGCompressionType::Fast, PNGCompressionType::Best] {
+                        for filter_type in vec![
+                            PNGFilterType::NoFilter,
+                            PNGFilterType::Adaptive,
+                            PNGFilterType::Avg,
+                            PNGFilterType::Paeth,
+                            PNGFilterType::Sub,
+                            PNGFilterType::Up
+                        ] {
+                            algorithms.push(Box::new(PNG::new_folder_workload(&mut workload, compression_type, filter_type, estimate_metadata)))
+                        }
+                    }
+                },
+                _ => {todo!()}
+            }
+            log::info!("Applying mixed compression to single file '{}'", file_name);
+            process_folder(workload, algorithms);
+        } else {
         let mut workload = Workload::new(format!("{}_{}", alg, file_name),
                                          File::open(format!("data/{}", file_name))
                                          .expect("Missing data file. Ensure the file exists and that it has been correctly placed in the project data folder.")
-                                         , Duration::from_secs_f64(budget));
+                                         , Duration::from_secs_f64(budget), None);
 
         match alg {
             Alg::Gzip => {
@@ -263,15 +286,22 @@ fn main() {
         }
         log::info!("Applying mixed compression to single file '{}'", file_name);
         process_single_document(workload, algorithms);
+            }
     } else {
         let mut workloads = Vec::new();
         let mut workload_algorithms = Vec::new();
+        for (workload_filename, _) in args.documents.iter() {
+            if metadata(format!("data/{}", workload_filename)).unwrap().is_dir() {
+                panic!("Multiple folder processing is currently not supported.");
+            }
+        }
+
         for (workload_filename, alg) in args.documents {
             let mut algorithms: Vec<Box<dyn Algorithm>> = Vec::with_capacity(9);
             let mut workload = Workload::new(format!("{}_{}", alg, workload_filename),
                                              File::open(format!("data/{}", workload_filename))
                                                  .expect("Missing data file. Ensure the file exists and that it has been correctly placed in the project data folder.")
-                                             , Duration::from_secs(0));
+                                             , Duration::from_secs(0), None);
             match alg {
                 Alg::Gzip => {
                     for i in 1..=9 {

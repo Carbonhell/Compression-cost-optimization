@@ -6,7 +6,7 @@ use rand::Rng;
 use tempfile::tempfile;
 use xz2::write::XzEncoder;
 use crate::algorithms::{Algorithm, BlockInfo, ByteSize, EstimateMetadata};
-use crate::workload::Workload;
+use crate::workload::{FolderWorkload, Workload};
 
 #[derive(Debug)]
 pub struct Xz2CompressionLevel(pub u32);
@@ -149,5 +149,9 @@ impl Algorithm for Xz2 {
         e.finish().unwrap();
         log::debug!("Execute with target: finished {:?}", instant.elapsed());
         w.data.rewind().unwrap();
+    }
+
+    fn execute_on_folder(&self, w: &mut FolderWorkload, write_to_tmp: bool, max_size: Option<u64>, first_half: bool) -> u64 {
+        unimplemented!()
     }
 }

@@ -9,7 +9,7 @@ use std::fmt::Debug;
 use std::fs::File;
 use std::time::Duration;
 use crate::convex_hull::Point;
-use crate::workload::Workload;
+use crate::workload::{FolderWorkload, Workload};
 
 pub type ByteSize = u64;
 
@@ -26,6 +26,8 @@ pub trait Algorithm: Debug {
 
     /// Runs the compression algorithm on some workload, by writing on a cursor target to optimize memory writes.
     fn execute_with_target(&self, w: &mut Workload, partition: usize, first_half: bool);
+
+    fn execute_on_folder(&self, w: &mut FolderWorkload, write_to_tmp: bool, max_size: Option<u64>, first_half: bool) -> u64;
 }
 
 
