@@ -6,7 +6,7 @@ use std::str::FromStr;
 use std::time::Duration;
 use clap::{CommandFactory, Parser};
 use clap::error::ErrorKind;
-use mix_compression::{process_folder, process_multiple_documents, process_single_document};
+use mix_compression::{algorithms, process_folder, process_multiple_documents, process_single_document};
 use mix_compression::algorithms::{Algorithm, EstimateMetadata};
 use mix_compression::algorithms::bzip2::{Bzip2, Bzip2CompressionLevel};
 use mix_compression::algorithms::gzip::{Gzip, GzipCompressionLevel};
@@ -16,7 +16,8 @@ use mix_compression::workload::{FolderWorkload, Workload};
 use {
     mix_compression::algorithms::png::{PNG, PNGCompressionType, PNGFilterType},
     image::codecs::png::{PngDecoder, PngEncoder},
-    image::{ImageDecoder, ImageEncoder}
+    image::{ImageDecoder, ImageEncoder},
+    crate::Alg::FELICS
 };
 
 /// Parse a single key-value pair
@@ -97,6 +98,9 @@ enum Alg {
     Bzip2,
     Xz2,
     Png,
+    FELICS,
+    JPEGXL,
+    Lossless,
 }
 
 impl FromStr for Alg {
@@ -109,6 +113,9 @@ impl FromStr for Alg {
             "xz2" => Ok(Alg::Xz2),
             #[cfg(feature = "image")]
             "png" => Ok(Alg::Png),
+            "felics" => Ok(Alg::FELICS),
+            "jpegxl" => Ok(Alg::JPEGXL),
+            "lossless" => Ok(Alg::Lossless),
             _ => Err(AlgParseError(String::from(input))),
         }
     }
@@ -121,6 +128,9 @@ impl fmt::Display for Alg {
             Alg::Bzip2 => write!(f, "bzip2"),
             Alg::Xz2 => write!(f, "xz2"),
             Alg::Png => write!(f, "png"),
+            Alg::FELICS => write!(f, "felics"),
+            Alg::JPEGXL => write!(f, "jpegxl"),
+            Alg::Lossless => write!(f, "lossless"),
         }
     }
 }
@@ -242,6 +252,34 @@ fn main() {
                         }
                     }
                 },
+                Alg::FELICS => {
+                    #[cfg(feature = "image")]
+                    algorithms.push(Box::new(algorithms::felics::FELICS::new_folder_workload(&mut workload, estimate_metadata)))
+                },
+                Alg::JPEGXL => {
+                    #[cfg(feature = "image")]
+                    algorithms.push(Box::new(algorithms::jpegxl::JPEGXL::new_folder_workload(&mut workload, estimate_metadata)))
+                },
+                Alg::Lossless => {
+                    #[cfg(feature = "image")]
+                    {
+                        for compression_type in vec![PNGCompressionType::Fast, PNGCompressionType::Best] {
+                            for filter_type in vec![
+                                PNGFilterType::NoFilter,
+                                PNGFilterType::Adaptive,
+                                PNGFilterType::Avg,
+                                PNGFilterType::Paeth,
+                                PNGFilterType::Sub,
+                                PNGFilterType::Up
+                            ] {
+                                algorithms.push(Box::new(PNG::new_folder_workload(&mut workload, compression_type, filter_type, estimate_metadata)))
+                            }
+                        }
+                        algorithms.push(Box::new(algorithms::felics::FELICS::new_folder_workload(&mut workload, estimate_metadata)));
+                        algorithms.push(Box::new(algorithms::jpegxl::JPEGXL::new_folder_workload(&mut workload, estimate_metadata)));
+                        algorithms.push(Box::new(algorithms::losslessjpeg::LosslessJPEG::new_folder_workload(&mut workload, 7, estimate_metadata)));
+                    }
+                }
                 _ => {todo!()}
             }
             log::info!("Applying mixed compression to single file '{}'", file_name);
@@ -283,6 +321,7 @@ fn main() {
                     }
                 }
             }
+            _ => panic!("Algorithm not supported on single files.")
         }
         log::info!("Applying mixed compression to single file '{}'", file_name);
         process_single_document(workload, algorithms);
@@ -333,6 +372,7 @@ fn main() {
                         }
                     }
                 }
+                _ => panic!("Algorithm not supported on specific files.")
             }
             workloads.push(workload);
             workload_algorithms.push(algorithms);

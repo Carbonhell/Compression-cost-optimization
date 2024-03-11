@@ -1,9 +1,9 @@
 use std::fs::File;
-use std::io::{Seek, SeekFrom, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use image::{ImageDecoder, ImageEncoder};
+use image::{GenericImageView, ImageDecoder, ImageEncoder};
 use image::codecs::png::{PngDecoder, PngEncoder};
 pub use image::codecs::png::CompressionType as PNGCompressionType;
 pub use image::codecs::png::FilterType as PNGFilterType;
@@ -117,16 +117,13 @@ impl Algorithm for PNG {
         let e = PngEncoder::new_with_quality(&mut w.result_file, self.compression_type, self.filter_type);
         log::debug!("Execute: encoder created {:?}", instant.elapsed());
 
-        let decoder = PngDecoder::new(&w.data)
-            .expect("Failed to decode workload png data");
-        let (dimension_width, dimension_height) = decoder.dimensions();
-        let color_type = decoder.color_type();
+        let mut buffer = Vec::new();
+        w.data.read_to_end(&mut buffer).unwrap();
+        let image = image::load_from_memory(&buffer).unwrap();
+        let (dimension_width, dimension_height) = image.dimensions();
+        let color_type = image.color();
 
-        // Stream decoding seems to be deprecated, so we have to load the whole image in memory unlike the other compression algorithms: https://github.com/image-rs/image/issues/1989
-        let mut buf: Vec<u8> = vec![0; decoder.total_bytes() as usize];
-        decoder.read_image(&mut buf).expect("Failed to read workload png data");
-
-        e.write_image(buf.as_slice(), dimension_width, dimension_height, color_type)
+        e.write_image(image.as_bytes(), dimension_width, dimension_height, color_type)
             .expect("Failed to write png data");
         log::debug!("Execute: finished {:?}", instant.elapsed());
 
@@ -141,18 +138,13 @@ impl Algorithm for PNG {
         let e = PngEncoder::new_with_quality(&tmpfile, self.compression_type, self.filter_type);
         log::debug!("Execute on tmp: encoder created {:?}", instant.elapsed());
 
-        let decoder = PngDecoder::new(&w.data)
-            .expect("Failed to decode workload png data");
-        let (dimension_width, dimension_height) = decoder.dimensions();
-        let color_type = decoder.color_type();
-        let size = decoder.total_bytes();
+        let mut buffer = Vec::new();
+        w.data.read_to_end(&mut buffer).unwrap();
+        let image = image::load_from_memory(&buffer).unwrap();
+        let (dimension_width, dimension_height) = image.dimensions();
+        let color_type = image.color();
         let bytes_per_pixel = color_type.bytes_per_pixel() as u64;
-        let image_total_size = decoder.total_bytes();
-
-        // TODO can we only read the bytes we're interested in? buf must be total_bytes big or read_image panics
-        log::debug!("Reading image in a buffer of len {}", size);
-        let mut buf: Vec<u8> = vec![0; decoder.total_bytes() as usize];
-        decoder.read_image(&mut buf).expect("Failed to read workload png data");
+        let image_total_size = image.as_bytes().len();
 
 
         let block_info = block_info.unwrap_or(BlockInfo { block_size: w.data.metadata().unwrap().len(), block_end_index: w.data.metadata().unwrap().len() });
@@ -164,10 +156,10 @@ impl Algorithm for PNG {
         let (start, data_len) = if block_info.block_end_index == block_info.block_size {
             (0usize, partitioned_total_size as usize)
         } else {
-            ((image_total_size - partitioned_total_size as u64) as usize, image_total_size as usize)
+            ((image_total_size as u64 - partitioned_total_size as u64) as usize, image_total_size as usize)
         };
 
-        e.write_image(&buf[start..data_len], mixed_width, mixed_height, color_type)
+        e.write_image(&image.as_bytes()[start..data_len], mixed_width, mixed_height, color_type)
             .expect("Failed to write png data");
         log::debug!("Execute on tmp: finished {:?}", instant.elapsed());
 

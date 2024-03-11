@@ -3,6 +3,12 @@ pub mod bzip2;
 pub mod xz2;
 #[cfg(feature = "image")]
 pub mod png;
+#[cfg(feature = "image")]
+pub mod felics;
+#[cfg(feature = "image")]
+pub mod jpegxl;
+#[cfg(feature = "image")]
+pub mod losslessjpeg;
 
 use std::cmp::Ordering;
 use std::fmt::Debug;
