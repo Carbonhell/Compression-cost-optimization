@@ -315,6 +315,7 @@ impl MixingPolicy<'_> {
     }
 
     pub fn apply_optimal_mix(optimal_mix: &OptimalMix, workload: &mut Workload) {
+        let instant = Instant::now();
         match optimal_mix {
             OptimalMix::Single(metrics) => {
                 log::debug!("Applying single algorithm");
@@ -331,9 +332,11 @@ impl MixingPolicy<'_> {
                 log::info!("Time passed: {:?} (should be near the time budget which is {:?})", instant.elapsed(), workload.time_budget);
             }
         }
+        log::info!("Time passed for the application of all mixes: {:?} (should be near the time budget which is {:?})", instant.elapsed(), workload.time_budget);
     }
 
     pub fn apply_optimal_mix_folder(optimal_mix: &OptimalMix, workload: &mut FolderWorkload) {
+        let instant = Instant::now();
         match optimal_mix {
             OptimalMix::Single(metrics) => {
                 log::debug!("Applying single algorithm");
@@ -350,6 +353,7 @@ impl MixingPolicy<'_> {
                 log::info!("Time passed: {:?} (should be near the time budget which is {:?})", instant.elapsed(), workload.time_budget);
             }
         }
+        log::info!("Time passed for the application of all mixes: {:?} (should be near the time budget which is {:?})", instant.elapsed(), workload.time_budget);
     }
 }
 
